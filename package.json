@@ -1,0 +1,29 @@
+{
+  "name": "audio-any-books-agent",
+  "version": "1.0.0",
+  "description": "Transform any PDF book into synchronized, presentation-quality audiobooks with dual-pane HTML reader and precise page-turn markers.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "discover": "node scripts/discover_pages.js",
+    "extract": "node scripts/extract_page_text.js",
+    "preload": "node scripts/make_pdf_preloader.js"
+  },
+  "keywords": [
+    "audiobook",
+    "pdf",
+    "voiceover",
+    "edge-tts",
+    "text-to-speech",
+    "dual-pane",
+    "webvtt",
+    "ai-agents"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "mp3-duration": "^1.1.0",
+    "msedge-tts": "^2.0.8",
+    "pdf-parse": "^1.1.1"
+  }
+}

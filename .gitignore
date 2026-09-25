@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Audio & Cache files
+*.mp3
+audio_*_cache/
+audio_*_cache
+
+# Large PDFs & Preloaders
+*.pdf
+*pdf_data.js
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
