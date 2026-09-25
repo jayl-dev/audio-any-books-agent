@@ -4,6 +4,10 @@ An AI agent skill that turns any PDF into an audiobook. Clone this repo, open it
 
 Once it's done, you'll get something like this: **[▶️ Live demo: Alice in Wonderland, Chapter 1](https://alice-chapter-1.zl25drexel.workers.dev/)**
 
+<p align="center">
+  <img src="screenshot.png" alt="Interactive player showing Alice in Wonderland Chapter 1 with synchronized audio controls" width="480">
+</p>
+
 > Turn **ANY PDF book** into a presentation-quality, page-synchronized audiobook with natural spoken descriptions for code & diagrams, alongside an interactive dual-pane web reader.
 
 **Zero manual commands required.** Just clone and prompt your AI agent!
