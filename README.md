@@ -138,6 +138,19 @@ node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf"
 - Gemini audio carries Google's inaudible SynthID watermark.
 - Prefer to pay through OpenRouter? Use `--engine openrouter` with `OPENROUTER_API_KEY` (from https://openrouter.ai/keys, or in `.env`). It runs the same Gemini 3.8 TTS models, voices and styles.
 
+### Optional: Google Cloud Text-to-Speech (Chirp 3 HD)
+
+High-quality voices with the same names as Gemini's, and a large monthly free tier counted in characters (check your Cloud console for the current allowance). No style direction, but fast, with exact paragraph timings.
+
+1. In a Google Cloud project with billing attached, enable the **Cloud Text-to-Speech API**.
+2. Create a service account, download its JSON key, and put it in a `credentials/` folder in this repo (git-ignored; never commit key files).
+3. Add `GOOGLE_APPLICATION_CREDENTIALS=credentials/<your-key>.json` to `.env`.
+
+```bash
+node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --prefix "alice_chapter_1" \
+  --engine google-cloud --voice Achird
+```
+
 ---
 
 ## License

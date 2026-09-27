@@ -35,17 +35,19 @@ The user never needs to run `npm install` manually; the agent handles environmen
 ### Step 0.5: Ask the User to Pick an Engine and Voice
 Unless the user already named an engine or voice in their request, ask them to choose **before** running any synthesis (use your harness's question/choice tool if it has one; otherwise ask in chat and wait for the answer).
 
-**First, the engine.** Offer these two options, with Gemini first as the recommendation:
+**First, the engine.** Offer these options, with Gemini first as the recommendation:
 
 1. **Google Gemini 3.8 TTS (Recommended)**: studio-quality, expressive narration with a delivery style matched to the book. Gemini's free tier is usually enough for some personal use, but the user has to get a free API key from Google AI Studio first. The free quota can be small (as low as 10 requests per day); the generator uses about one request per page, so the free tier covers a few pages a day, and a whole book needs billing enabled on the key.
-2. **Microsoft Edge voices**: free, no setup, and no usage limits. Very good, but less expressive than Gemini.
+2. **Google Cloud Text-to-Speech, Chirp 3 HD voices**: high-quality voices with the same names as Gemini's (Charon, Kore, Sadaltager...), but without style direction. Google Cloud's monthly free tier is counted in characters and is large for personal use (reported as 1 million characters a month for Chirp 3 HD, roughly 17 hours of narration; the user can confirm in their Cloud console). Needs more setup: a Google Cloud project with billing attached, the Cloud Text-to-Speech API enabled, and a service account key file. Fast, with exact paragraph timings and no safety refusals.
+3. **Microsoft Edge voices**: free, no setup, and no usage limits. Very good, but less expressive than Gemini.
 
 - If a `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is already available, in the environment or in the repo-root `.env` file, say so: Gemini then needs no extra setup.
 - The same Gemini voices can also be used through **OpenRouter** (`--engine openrouter`) with an `OPENROUTER_API_KEY` (from https://openrouter.ai/keys, saved in the repo-root `.env`). Use it when the user asks for OpenRouter or already has an OpenRouter key but no Gemini key; it bills OpenRouter credits instead of a Google account, at the same listed per-token prices. Voices, styles, the book-type table below, and all Gemini notes apply unchanged.
 - If the user picks Gemini and has no key, walk them through it: create a key at https://aistudio.google.com/apikey, then save it as `GEMINI_API_KEY=<key>` in a `.env` file at the repo root (it is git-ignored). Wait for the key before synthesizing. If they would rather not set one up, use the Edge voices.
+- If `GOOGLE_APPLICATION_CREDENTIALS` is set (in the environment or `.env`) and points to an existing key file, Google Cloud needs no extra setup: say so. If the user picks it without a key, walk them through it: in the Google Cloud console, enable the Cloud Text-to-Speech API, create a service account, download its JSON key, save the key in the repo's `credentials/` folder (git-ignored), and add `GOOGLE_APPLICATION_CREDENTIALS=credentials/<file>.json` to `.env`. Never commit key files.
 - If the user wants no setup or no limits, or declines to choose, use the Edge voices.
 
-**Then, the voice.** For Gemini, recommend the voice and style matched to the book type (see "Match the Gemini style and voice to the book type" below). For Edge, offer these options, with Andrew first as the recommended default:
+**Then, the voice.** For Gemini, recommend the voice and style matched to the book type (see "Match the Gemini style and voice to the book type" below). For Google Cloud, recommend the voice from the same table (`--engine google-cloud --voice <name>`; `--style` is ignored). For Edge, offer these options, with Andrew first as the recommended default:
 
 | Voice ID | Style | Best for |
 | :--- | :--- | :--- |

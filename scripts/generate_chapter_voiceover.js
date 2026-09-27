@@ -3,7 +3,7 @@
  * Part of the 'audio-any-books-agent' toolkit.
  *
  * Usage as CLI:
- *   node scripts/generate_chapter_voiceover.js --pdf <pdfPath> --pages <start>-<end> [--title <title>] [--prefix <prefix>] [--engine edge|gemini|openrouter] [--voice <voiceName>] [--model <geminiModel>] [--style <direction>] [--bookPageOffset <offset>] [--outDir <dir>]
+ *   node scripts/generate_chapter_voiceover.js --pdf <pdfPath> --pages <start>-<end> [--title <title>] [--prefix <prefix>] [--engine edge|gemini|openrouter|google-cloud] [--voice <voiceName>] [--model <geminiModel>] [--style <direction>] [--bookPageOffset <offset>] [--outDir <dir>]
  *
  * Usage as Module:
  *   const { processChapter } = require('./generate_chapter_voiceover');
@@ -60,7 +60,9 @@ const DEFAULT_VOICES = {
   edge: 'en-US-AndrewMultilingualNeural',
   gemini: 'Charon',
   // The same Gemini TTS models, called through OpenRouter
-  openrouter: 'Charon'
+  openrouter: 'Charon',
+  // Google Cloud Text-to-Speech Chirp 3 HD voices (same voice names as Gemini)
+  'google-cloud': 'Charon'
 };
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts';
 const GEMINI_ENGINES = ['gemini', 'openrouter'];
@@ -86,8 +88,10 @@ async function synthesizeSegment(cacheName, label, text, cacheDir, voice, { engi
     buf = await synthesizeGemini(label, sanitizeForSpeech(text, { preserveTags: true }), voice, model || DEFAULT_GEMINI_MODEL, style, engine);
   } else if (engine === 'edge') {
     buf = await synthesizeEdge(label, sanitizeForSpeech(text), cacheDir, voice);
+  } else if (engine === 'google-cloud') {
+    buf = await synthesizeGoogleCloud(label, sanitizeForSpeech(text), voice);
   } else {
-    throw new Error(`Unknown TTS engine "${engine}". Use "edge", "gemini" or "openrouter".`);
+    throw new Error(`Unknown TTS engine "${engine}". Use "edge", "gemini", "openrouter" or "google-cloud".`);
   }
   fs.writeFileSync(cachePath, buf);
   return buf;
@@ -118,6 +122,80 @@ async function synthesizeEdge(label, cleanText, cacheDir, voice) {
       await new Promise(r => setTimeout(r, 2000 * attempt));
     }
   }
+}
+
+// Google Cloud Text-to-Speech (Chirp 3 HD). Authenticates with a service account key named by
+// GOOGLE_APPLICATION_CREDENTIALS (environment or .env; relative paths resolve against the repo root).
+// Requests are capped at 5,000 bytes of text, so long paragraphs are split by sentence.
+const GOOGLE_CLOUD_MAX_CHARS = 4000;
+let googleCloudAuth = null;
+
+async function getGoogleCloudToken() {
+  if (!googleCloudAuth) {
+    loadEnvFile();
+    let keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    if (!keyFile) {
+      throw new Error('The google-cloud engine needs a service account key. Set GOOGLE_APPLICATION_CREDENTIALS to the key file path (in .env or the environment).');
+    }
+    if (!path.isAbsolute(keyFile)) keyFile = path.join(__dirname, '..', keyFile);
+    if (!fs.existsSync(keyFile)) throw new Error(`Service account key not found: ${keyFile}`);
+    const { GoogleAuth } = require('google-auth-library');
+    googleCloudAuth = new GoogleAuth({ keyFile, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+  }
+  const client = await googleCloudAuth.getClient();
+  return (await client.getAccessToken()).token;
+}
+
+// A short voice name such as "Charon" means the US English Chirp 3 HD voice; a full name
+// such as "en-GB-Chirp3-HD-Charon" is used as given, with its language taken from the name
+function googleCloudVoice(voice) {
+  if (/Neural$/.test(voice)) {
+    throw new Error(`"${voice}" is an Edge voice. Pick a Chirp 3 HD voice such as Charon, Kore or Puck.`);
+  }
+  const name = voice.includes('-') ? voice : `en-US-Chirp3-HD-${voice}`;
+  return { name, languageCode: name.split('-').slice(0, 2).join('-') };
+}
+
+async function synthesizeGoogleCloud(label, cleanText, voice) {
+  const voiceParams = googleCloudVoice(voice);
+  const chunks = splitForTts(cleanText, GOOGLE_CLOUD_MAX_CHARS);
+  const pcmParts = [];
+  let sampleRate = 24000;
+  for (let c = 0; c < chunks.length; c++) {
+    const chunkLabel = chunks.length > 1 ? `${label} part ${c + 1}/${chunks.length}` : label;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${await getGoogleCloudToken()}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { text: chunks[c] },
+            voice: voiceParams,
+            audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: 24000 }
+          })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const err = new Error(`${res.status} ${(body.error && body.error.message) || res.statusText}`);
+          err.status = res.status;
+          throw err;
+        }
+        const decoded = decodePcm(Buffer.from(body.audioContent, 'base64'), 24000);
+        sampleRate = decoded.sampleRate;
+        pcmParts.push(decoded.samples);
+        break;
+      } catch (err) {
+        console.warn(`Attempt ${attempt} for ${chunkLabel} failed: ${err.message}`);
+        // Bad credentials, a disabled API, or an unknown voice will not succeed on retry
+        if (attempt === MAX_ATTEMPTS || [400, 401, 403, 404].includes(err.status) || !err.status && /key|credentials/i.test(err.message)) {
+          if (err.status === 403) err.message += '\nCheck that the Cloud Text-to-Speech API is enabled for the project and the service account can use it.';
+          throw err;
+        }
+        await new Promise(r => setTimeout(r, (err.status === 429 ? 10000 : 2000) * attempt));
+      }
+    }
+  }
+  return encodeMp3(concatPcm(pcmParts), sampleRate);
 }
 
 // Split text at sentence boundaries into chunks of at most maxChars
@@ -578,6 +656,7 @@ async function processChapter({
   }
   console.log(`Output directory: ${baseDir}`);
   console.log(`TTS engine: ${engine}${GEMINI_ENGINES.includes(engine) ? ` (${model})` : ''}, voice: ${voice}`);
+  if (style && !GEMINI_ENGINES.includes(engine)) console.warn(`Note: --style only applies to Gemini voices; the ${engine} engine ignores it.`);
 
   const cacheDir = path.join(baseDir, `audio_${outputPrefix}_cache`);
   if (!fs.existsSync(cacheDir)) {
@@ -778,7 +857,7 @@ if (require.main === module) {
 
   (async () => {
     if (!DEFAULT_VOICES[engineArg]) {
-      console.error(`Unknown --engine "${engineArg}". Use "edge", "gemini" or "openrouter".`);
+      console.error(`Unknown --engine "${engineArg}". Use "edge", "gemini", "openrouter" or "google-cloud".`);
       process.exit(1);
     }
     let pagesData = {};
@@ -815,10 +894,14 @@ Usage:
   node scripts/generate_chapter_voiceover.js --pdf "book.pdf" --pages 10-25 --title "Chapter Title" --prefix ch1
 
 Options:
-  --engine edge|gemini|openrouter   TTS engine (default: edge). gemini needs GEMINI_API_KEY;
-  --voice <name>         Edge voice (default ${DEFAULT_VOICES.edge}) or Gemini voice (default ${DEFAULT_VOICES.gemini})
+  --engine <name>        TTS engine (default: edge, free Microsoft voices):
+                           gemini        Gemini 3.8 TTS via Google (GEMINI_API_KEY)
+                           openrouter    Gemini 3.8 TTS via OpenRouter (OPENROUTER_API_KEY)
+                           google-cloud  Google Cloud Text-to-Speech Chirp 3 HD (GOOGLE_APPLICATION_CREDENTIALS)
+  --voice <name>         Edge voice (default ${DEFAULT_VOICES.edge}), or a Gemini / Chirp 3 HD voice
+                         such as Charon (default), Kore or Sadaltager
   --model <id>           Gemini model (default ${DEFAULT_GEMINI_MODEL}; or gemini-3.8-flash-tts)
-  --style "<direction>"  Gemini delivery direction, e.g. "warm, unhurried audiobook narrator"
+  --style "<direction>"  Gemini delivery direction, e.g. "warm, unhurried audiobook narrator" (ignored by google-cloud)
   --outDir <dir>         Output folder (default: the PDF's folder)
       `);
       process.exit(0);

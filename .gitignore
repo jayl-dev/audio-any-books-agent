@@ -22,3 +22,7 @@ npm-debug.log*
 
 # Secrets
 .env
+
+# Google Cloud service account keys
+secret-gist-*.json
+credentials/
