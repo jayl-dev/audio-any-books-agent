@@ -4,7 +4,23 @@ const path = require('path');
 const { exec } = require('child_process');
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const ROOT_DIR = __dirname;
+// Serve the directory given on the command line (e.g. a book folder), else this repo
+const ROOT_DIR = path.resolve(process.argv[2] || __dirname);
+
+// Players are written next to their book PDFs, so search subfolders too
+function findPlayers(dir = ROOT_DIR, depth = 0) {
+  let results = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (depth < 3 && entry.name !== 'node_modules' && !entry.name.startsWith('.')) {
+        results = results.concat(findPlayers(path.join(dir, entry.name), depth + 1));
+      }
+    } else if (entry.name.endsWith('_player.html')) {
+      results.push(path.relative(ROOT_DIR, path.join(dir, entry.name)).split(path.sep).join('/'));
+    }
+  }
+  return results;
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -34,7 +50,7 @@ const server = http.createServer((req, res) => {
 
   let reqPath = decodeURIComponent(req.url.split('?')[0]);
   if (reqPath === '/' || reqPath === '') {
-    const playerFiles = fs.readdirSync(ROOT_DIR).filter(f => f.endsWith('_player.html'));
+    const playerFiles = findPlayers();
     if (playerFiles.length > 0) {
       reqPath = '/' + playerFiles[0];
     } else {
@@ -45,7 +61,7 @@ const server = http.createServer((req, res) => {
         <head><title>Audio Any Books Agent Server</title></head>
         <body style="font-family: sans-serif; padding: 40px; background: #0f172a; color: #f8fafc;">
           <h1>Audio Any Books Agent</h1>
-          <p>No <code>*_player.html</code> files found in the root directory yet.</p>
+          <p>No <code>*_player.html</code> files found under <code>${ROOT_DIR}</code> yet.</p>
           <p>Generate one using <code>node scripts/generate_chapter_voiceover.js</code>!</p>
         </body>
         </html>
@@ -54,10 +70,10 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  const filePath = path.join(ROOT_DIR, reqPath);
+  const filePath = path.resolve(ROOT_DIR, '.' + reqPath);
 
   // Security check: ensure within ROOT_DIR
-  if (!filePath.startsWith(ROOT_DIR)) {
+  if (filePath !== ROOT_DIR && !filePath.startsWith(ROOT_DIR + path.sep)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
@@ -109,7 +125,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  const playerFiles = fs.readdirSync(ROOT_DIR).filter(f => f.endsWith('_player.html'));
+  const playerFiles = findPlayers();
   const firstUrl = playerFiles.length > 0 ? `http://localhost:${PORT}/${playerFiles[0]}` : `http://localhost:${PORT}/`;
 
   console.log(`\n======================================================`);
@@ -123,10 +139,10 @@ server.listen(PORT, () => {
       console.log(`  * http://localhost:${PORT}/${f}`);
     });
   } else {
-    console.log(`\nNo *_player.html files detected in root directory yet.`);
+    console.log(`\nNo *_player.html files detected under ${ROOT_DIR} yet.`);
   }
 
   console.log(`\nOpening default browser...\n`);
-  const openCmd = process.platform === 'win32' ? `start ${firstUrl}` : process.platform === 'darwin' ? `open ${firstUrl}` : `xdg-open ${firstUrl}`;
+  const openCmd = process.platform === 'win32' ? `start "" "${firstUrl}"` : process.platform === 'darwin' ? `open ${firstUrl}` : `xdg-open ${firstUrl}`;
   exec(openCmd, () => {});
 });

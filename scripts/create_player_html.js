@@ -1,16 +1,11 @@
-const fs = require('fs');
-const path = require('path');
-
-function createPlayerHtml({ title, pdfFilename, audioFilename, markers, base64Filename, base64VarName }) {
+function createPlayerHtml({ title, pdfFilename, audioFilename, markers, paragraphs = [], base64Filename, base64VarName }) {
   const markersJson = JSON.stringify(markers, null, 2);
+  // Only timing and page rects are needed for highlighting; the text stays in <prefix>_paragraphs.json
+  const paragraphsJson = JSON.stringify(paragraphs
+    .filter(p => p.rects && p.rects.length)
+    .map(p => ({ page: p.page, start: p.startSeconds, end: p.endSeconds, rects: p.rects })));
   const firstPage = markers[0] ? markers[0].page : 1;
-  const scriptTag = base64Filename
-    ? `  <script src="${base64Filename}"></script>`
-    : (pdfFilename && pdfFilename.toLowerCase().includes('eloquent')
-      ? `  <script src="eloquent_javascript_pdf_data.js"></script>`
-      : (fs.existsSync('ai_agents_in_action_pdf_data.js') && pdfFilename && pdfFilename.toLowerCase().includes('agent')
-        ? `  <script src="ai_agents_in_action_pdf_data.js"></script>`
-        : ''));
+  const scriptTag = base64Filename ? `  <script src="${base64Filename}"></script>` : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -113,6 +108,26 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
       display: block;
       border-radius: 2px;
       pointer-events: none;
+    }
+
+    /* Current-paragraph highlight, positioned in page-relative percentages so it follows zoom */
+    .para-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .para-hl {
+      position: absolute;
+      background: rgba(56, 189, 248, 0.24);
+      border-radius: 3px;
+      mix-blend-mode: multiply;
+      animation: para-hl-in 0.25s ease;
+    }
+
+    @keyframes para-hl-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
     .page-tag {
@@ -542,11 +557,22 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
     }
 
     .progress-fill {
+      position: relative;
       height: 100%;
       background: linear-gradient(90deg, #0ea5e9, #38bdf8);
       width: 0%;
       border-radius: 6px;
       transition: width 0.1s linear;
+    }
+
+    /* How much of the audio has downloaded, shown while it is fetched for seeking */
+    .progress-loaded {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0%;
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 6px;
+      transition: width 0.2s linear, opacity 0.4s ease;
     }
 
     .player-actions {
@@ -1082,10 +1108,12 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
     <div class="spread-wrapper" id="spread-wrapper">
       <div class="page-box" id="page-box-left">
         <canvas id="canvas-left"></canvas>
+        <div class="para-layer" id="para-layer-left"></div>
         <span class="page-tag" id="tag-left">Page</span>
       </div>
       <div class="page-box" id="page-box-right">
         <canvas id="canvas-right"></canvas>
+        <div class="para-layer" id="para-layer-right"></div>
         <span class="page-tag" id="tag-right">Page</span>
       </div>
     </div>
@@ -1102,7 +1130,7 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
       <span class="page-badge" id="current-badge">Loading...</span>
     </div>
     <div class="header-right">
-      <button class="icon-btn tool-btn" id="toggle-view-btn" title="Toggle Dual / Single Page Spread"><span class="btn-icon">📖</span><span class="btn-label">Dual Page</span></button>
+      <button class="icon-btn tool-btn" id="toggle-view-btn" title="Toggle Dual / Single Page Spread"><span class="btn-icon">◫</span><span class="btn-label">Dual Page</span></button>
       <div class="zoom-ctrls" id="zoom-ctrls">
         <button class="icon-btn tool-btn" id="zoom-out-btn" title="Zoom Out (−)"><span class="btn-icon">−</span></button>
         <span id="zoom-label" class="tool-btn">100%</span>
@@ -1110,9 +1138,10 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
         <button class="icon-btn tool-btn" id="reset-view-btn" title="Reset Zoom & Pan (Double-tap/click background)"><span class="btn-icon">⟲</span><span class="btn-label">Reset</span></button>
       </div>
       <span class="header-sep"></span>
-      <button class="icon-btn tool-btn" id="toggle-markers-btn" title="Toggle Page Markers List (M)"><span class="btn-icon">📑</span><span class="btn-label">Markers</span></button>
+      <button class="icon-btn tool-btn" id="toggle-highlight-btn" title="Highlight the paragraph being read (H)" style="display: none;"><span class="btn-icon">¶</span><span class="btn-label">Highlight</span></button>
+      <button class="icon-btn tool-btn" id="toggle-markers-btn" title="Toggle Page Markers List (M)"><span class="btn-icon">☰</span><span class="btn-label">Markers</span></button>
       <button class="icon-btn tool-btn" id="fullscreen-btn" title="Toggle Fullscreen (F)"><span class="btn-icon">⛶</span></button>
-      <button class="icon-btn tool-btn" id="change-pdf-btn" title="Open a different PDF file"><span class="btn-icon">📂</span><span class="btn-label">Change PDF</span></button>
+      <button class="icon-btn tool-btn" id="change-pdf-btn" title="Open a different PDF file"><span class="btn-icon">⇄</span><span class="btn-label">Change PDF</span></button>
       <input type="file" id="pdf-file-input" accept="application/pdf" style="display: none;">
     </div>
     <button class="icon-btn expand-header-btn" id="expand-header-btn" title="Minimize Title Bar">▲</button>
@@ -1120,7 +1149,7 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
 
   <!-- Floating Audio Player Island (Mini-sizes on inactivity, stays on screen) -->
   <div class="floating-player" id="floating-player">
-    <audio id="audio" src="${audioFilename}" preload="auto"></audio>
+    <audio id="audio" src="${audioFilename}" preload="metadata"></audio>
 
     <div class="player-actions">
       <button class="icon-btn nav-btn" id="prev-page-btn" title="Previous Page ([)">⏮</button>
@@ -1136,6 +1165,7 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
         <span id="time-readout">00:00 / 00:00</span>
       </div>
       <div class="progress-track" id="progress-track">
+        <div class="progress-loaded" id="progress-loaded"></div>
         <div class="progress-fill" id="progress-fill"></div>
       </div>
     </div>
@@ -1178,6 +1208,7 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
 
   <script>
     const MARKERS = ${markersJson};
+    const PARAGRAPHS = ${paragraphsJson};
     const PDF_FILENAME = "${pdfFilename}";
     const AUDIO_FILENAME = "${audioFilename}";
     const DEFAULT_START_PAGE = ${firstPage};
@@ -1260,7 +1291,7 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
 
     function updateToggleViewBtn() {
       if (!toggleViewBtn) return;
-      toggleViewBtn.querySelector('.btn-icon').textContent = isDualPage ? '📖' : '📄';
+      toggleViewBtn.querySelector('.btn-icon').textContent = isDualPage ? '◫' : '▯';
       toggleViewBtn.querySelector('.btn-label').textContent = isDualPage ? 'Dual Page' : 'Single Page';
       toggleViewBtn.title = isDualPage
         ? 'Current: Dual Page View (Click to switch to Single Page)'
@@ -1889,6 +1920,137 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
       }
     }, { once: true });
 
+    // Seeking into audio that hasn't downloaded yet needs HTTP range requests. Some static hosts
+    // ignore them and always send the whole file, so the browser can only seek within what has
+    // arrived. On such hosts, download the audio in the background and switch to the local copy,
+    // keeping the position, speed and play state. Seeks made meanwhile are applied after the switch.
+    const progressLoaded = document.getElementById('progress-loaded');
+    let audioSeekable = !/^https?:$/.test(location.protocol);
+    let pendingSeekTime = null;
+    let pausedForSeek = false;
+    let audioDownloadFraction = 0;
+
+    // Route every seek through here: until the audio is seekable, hold the requested time
+    // (reported back as currentTime so the UI follows it) and pause until it can be applied.
+    const nativeCurrentTime = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'currentTime');
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      get() {
+        return pendingSeekTime !== null ? pendingSeekTime : nativeCurrentTime.get.call(audio);
+      },
+      set(t) {
+        if (audioSeekable) {
+          nativeCurrentTime.set.call(audio, t);
+          return;
+        }
+        pendingSeekTime = t;
+        if (!audio.paused) {
+          pausedForSeek = true;
+          audio.pause();
+        }
+        showSeekWaiting();
+      }
+    });
+
+    // Pressing play while a seek is waiting resumes at the requested time once it can be applied
+    audio.addEventListener('play', () => {
+      if (pendingSeekTime !== null) {
+        pausedForSeek = true;
+        audio.pause();
+      }
+    });
+
+    function showSeekWaiting() {
+      if (pendingSeekTime === null) return;
+      metaReading.textContent = 'Loading audio' + (audioDownloadFraction ? ' ' + Math.round(audioDownloadFraction * 100) + '%' : '') + '...';
+      const dur = audio.duration || 1;
+      progressFill.style.width = ((pendingSeekTime / dur) * 100) + '%';
+      timeReadout.textContent = fmt(pendingSeekTime) + ' / ' + fmt(dur);
+    }
+
+    function showAudioDownload(fraction) {
+      audioDownloadFraction = fraction;
+      progressLoaded.style.width = (fraction * 100) + '%';
+      progressTrack.title = fraction < 1 ? 'Downloading audio for seeking: ' + Math.round(fraction * 100) + '%' : '';
+      showSeekWaiting();
+    }
+
+    // Apply a seek that was waiting, and resume playback if it was playing
+    function applyPendingSeek() {
+      const target = pendingSeekTime;
+      const resume = pausedForSeek;
+      pendingSeekTime = null;
+      pausedForSeek = false;
+      if (target !== null) {
+        nativeCurrentTime.set.call(audio, target);
+        const marker = getMarkerAtTime(target);
+        if (marker) {
+          currentPage = marker.page;
+          updateSpreadDisplay();
+          highlightActiveMarker(marker);
+        }
+      }
+      if (resume) safePlayAudio();
+    }
+
+    function switchAudioSource(url) {
+      if (pendingSeekTime === null) pendingSeekTime = nativeCurrentTime.get.call(audio);
+      if (!audio.paused) {
+        pausedForSeek = true;
+        audio.pause();
+      }
+      const rate = audio.playbackRate;
+      audio.addEventListener('loadedmetadata', () => {
+        audio.playbackRate = rate;
+        audioSeekable = true;
+        applyPendingSeek();
+      }, { once: true });
+      audio.src = url;
+      audio.load();
+    }
+
+    async function ensureSeekableAudio() {
+      if (audioSeekable || typeof fetch !== 'function') return;
+      const url = audio.currentSrc || audio.src;
+      try {
+        const res = await fetch(url, { headers: { Range: 'bytes=0-1' } });
+        if (res.status === 206) {
+          audioSeekable = true;
+          if (res.body) res.body.cancel();
+          applyPendingSeek();
+          return;
+        }
+        if (!res.ok || !res.body) {
+          audioSeekable = true;
+          applyPendingSeek();
+          return;
+        }
+
+        // The server sent the whole file instead of a range: read it with progress
+        const total = Number(res.headers.get('Content-Length')) || 0;
+        const reader = res.body.getReader();
+        const chunks = [];
+        let received = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total) showAudioDownload(received / total);
+        }
+        showAudioDownload(1);
+        progressLoaded.style.opacity = '0';
+        const blob = new Blob(chunks, { type: res.headers.get('Content-Type') || 'audio/mpeg' });
+        switchAudioSource(URL.createObjectURL(blob));
+      } catch (err) {
+        // Fall back to the browser's own seeking rather than holding seeks forever
+        console.warn('Could not prepare seekable audio:', err);
+        audioSeekable = true;
+        applyPendingSeek();
+      }
+    }
+    ensureSeekableAudio();
+
     // Audio Play / Pause
     playTrigger.addEventListener('click', toggleAudio);
     function toggleAudio() {
@@ -1947,6 +2109,7 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
           highlightActiveMarker(marker);
         }
       }
+      updateParagraphHighlight();
       saveProgress(false);
     });
 
@@ -1961,6 +2124,58 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
         activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
+
+    // Current-paragraph highlight (drawn from PARAGRAPHS rects over the rendered page)
+    const HIGHLIGHT_KEY = 'pdf_voiceover_highlight';
+    const highlightBtn = document.getElementById('toggle-highlight-btn');
+    const paraLayerLeft = document.getElementById('para-layer-left');
+    const paraLayerRight = document.getElementById('para-layer-right');
+    let highlightEnabled = true;
+    try { highlightEnabled = localStorage.getItem(HIGHLIGHT_KEY) !== 'off'; } catch (_) {}
+    let shownHighlightKey = null;
+
+    function getParagraphAtTime(timeSec) {
+      return PARAGRAPHS.find(p => timeSec >= p.start && timeSec < p.end) || null;
+    }
+
+    function updateParagraphHighlight() {
+      const para = highlightEnabled ? getParagraphAtTime(audio.currentTime) : null;
+      let layer = null;
+      if (para && para.page === currentRenderedLeft) layer = paraLayerLeft;
+      else if (para && para.page === currentRenderedRight) layer = paraLayerRight;
+
+      const key = layer ? PARAGRAPHS.indexOf(para) + ':' + layer.id : null;
+      if (key === shownHighlightKey) return;
+      shownHighlightKey = key;
+      paraLayerLeft.innerHTML = '';
+      paraLayerRight.innerHTML = '';
+      if (!layer) return;
+
+      for (const [x, y, w, h] of para.rects) {
+        const el = document.createElement('div');
+        el.className = 'para-hl';
+        // Pad slightly so the highlight doesn't clip ascenders and descenders
+        el.style.left = 'calc(' + (x * 100) + '% - 3px)';
+        el.style.top = 'calc(' + (y * 100) + '% - 1px)';
+        el.style.width = 'calc(' + (w * 100) + '% + 6px)';
+        el.style.height = 'calc(' + (h * 100) + '% + 2px)';
+        layer.appendChild(el);
+      }
+    }
+
+    function setHighlightEnabled(on) {
+      highlightEnabled = on;
+      highlightBtn.classList.toggle('active', on);
+      try { localStorage.setItem(HIGHLIGHT_KEY, on ? 'on' : 'off'); } catch (_) {}
+      updateParagraphHighlight();
+    }
+
+    if (PARAGRAPHS.length) {
+      highlightBtn.style.display = '';
+      highlightBtn.classList.toggle('active', highlightEnabled);
+      highlightBtn.addEventListener('click', () => setHighlightEnabled(!highlightEnabled));
+    }
+    audio.addEventListener('seeked', updateParagraphHighlight);
 
     function jumpToPage(pageNum) {
       const m = MARKERS.find(item => item.page === pageNum);
@@ -2102,6 +2317,9 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
       } else if (e.key.toLowerCase() === 'r') {
         e.preventDefault();
         resetPanAndZoom();
+      } else if (e.key.toLowerCase() === 'h' && PARAGRAPHS.length) {
+        e.preventDefault();
+        setHighlightEnabled(!highlightEnabled);
       }
     });
 
@@ -2219,6 +2437,7 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
         currentRenderedRight = spread.right;
         currentRenderedZoom = zoomLevel;
         updateTransform();
+        updateParagraphHighlight();
       } catch (err) {
         if (err && err.name !== 'RenderingCancelledException') {
           console.warn('PDF Render Warning:', err);
@@ -2253,11 +2472,9 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
       const b64Var = "${base64VarName || ''}";
       const embeddedB64 = (b64Var && typeof window[b64Var] === 'string' && window[b64Var].length > 1000)
         ? window[b64Var]
-        : (typeof window.AI_AGENTS_IN_ACTION_PDF_BASE64 === 'string' && window.AI_AGENTS_IN_ACTION_PDF_BASE64.length > 1000)
-          ? window.AI_AGENTS_IN_ACTION_PDF_BASE64
-          : (typeof window.ELOQUENT_JAVASCRIPT_PDF_BASE64 === 'string' && window.ELOQUENT_JAVASCRIPT_PDF_BASE64.length > 1000)
-            ? window.ELOQUENT_JAVASCRIPT_PDF_BASE64
-            : null;
+        : (typeof window.BOOK_PDF_BASE64 === 'string' && window.BOOK_PDF_BASE64.length > 1000)
+          ? window.BOOK_PDF_BASE64
+          : null;
 
       if (embeddedB64) {
         try {

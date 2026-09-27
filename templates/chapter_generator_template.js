@@ -33,6 +33,10 @@ async function main() {
     title: 'My Book - Chapter 1: Getting Started',
     pdfPath: 'mybook.pdf',
     voice: 'en-US-AndrewMultilingualNeural', // see SKILL.md Step 0.5 for the voice menu
+    // Optional Gemini 3.8 TTS engine (needs GEMINI_API_KEY):
+    // engine: 'gemini', voice: 'Sadaltager', style: 'clear, knowledgeable tech expert explaining to a colleague',
+    // (match the style and voice to the book type; see SKILL.md)
+    // model: 'gemini-3.8-flash-lite-tts', // or 'gemini-3.8-flash-tts'
     bookPageOffset: 0 // Optional: if PDF p.10 is Book p.1, set offset to -9
   });
 }

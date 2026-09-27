@@ -20,7 +20,8 @@ const getArg = (name) => {
 
 const pdfPath = getArg('pdf');
 const pagesArg = getArg('pages');
-const outPath = getArg('out') || 'extracted_pages.json';
+// Relative --out paths (and the default) resolve against the PDF's folder
+const outPath = pdfPath && path.resolve(path.dirname(path.resolve(pdfPath)), getArg('out') || 'extracted_pages.json');
 
 if (!pdfPath || !pagesArg) {
   console.log(`
@@ -28,6 +29,8 @@ extract_page_text.js - Extract raw text per page for review and narration script
 
 Usage:
   node scripts/extract_page_text.js --pdf <pdfPath> --pages <start>-<end> [--out <output.json|.md>]
+
+  Relative --out paths resolve against the PDF's folder (default: extracted_pages.json).
 
 Examples:
   node scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1.json
