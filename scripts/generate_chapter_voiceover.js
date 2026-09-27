@@ -247,6 +247,7 @@ async function geminiRequest(label, text, voice, model, style) {
         if (status === 429) {
           err.message += '\nThe Gemini quota is used up. Wait for it to reset, enable billing on the key, or use --engine edge.';
         }
+        err.contentBlocked = contentBlocked;
         throw err;
       }
       // Rate limits say how long to wait ("Please retry in 35s")
@@ -405,6 +406,15 @@ function packParagraphs(paragraphs, maxChars = GEMINI_MAX_CHARS) {
   return chunks;
 }
 
+// Name the paragraph Gemini's safety filter refuses, so the script can be reworded
+function blockedParagraphError(err, label, part, paragraphs) {
+  if (!err.contentBlocked) return err;
+  const text = paragraphs[part.index];
+  err.message = `Gemini's safety filter keeps blocking ${label}, paragraph ${part.index + 1}: "${text.slice(0, 120)}${text.length > 120 ? '...' : ''}". ` +
+    'It is usually a false positive; reword that paragraph slightly in the script and re-run (finished pages are cached), or use --engine edge.';
+  return err;
+}
+
 // Voice a page's paragraphs with as few Gemini requests as possible; returns the MP3 and
 // each paragraph's start offset (seconds) within it
 async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style) {
@@ -419,7 +429,28 @@ async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style
   for (let c = 0; c < chunks.length; c++) {
     const parts = chunks[c];
     const chunkLabel = chunks.length > 1 ? `${label} part ${c + 1}/${chunks.length}` : label;
-    const decoded = await geminiRequest(chunkLabel, parts.map(p => p.text).join('\n\n'), voice, model, style);
+    let decoded;
+    try {
+      decoded = await geminiRequest(chunkLabel, parts.map(p => p.text).join('\n\n'), voice, model, style);
+    } catch (err) {
+      if (!err.contentBlocked || parts.length === 1) throw blockedParagraphError(err, label, parts[0], paragraphs);
+      // The safety filter keeps rejecting this chunk: send its paragraphs one at a time instead,
+      // which isolates any paragraph it objects to (and makes these paragraph timings exact)
+      console.warn(`${chunkLabel} keeps being blocked; retrying it one paragraph at a time.`);
+      for (const part of parts) {
+        let single;
+        try {
+          single = await geminiRequest(`${label} paragraph ${part.index + 1}`, part.text, voice, model, style);
+        } catch (partErr) {
+          throw blockedParagraphError(partErr, label, part, paragraphs);
+        }
+        sampleRate = single.sampleRate;
+        if (part.starts) offsets[part.index] = elapsed;
+        pcmParts.push(single.samples);
+        elapsed += single.samples.length / sampleRate;
+      }
+      continue;
+    }
     sampleRate = decoded.sampleRate;
     const starts = placeBoundaries(parts.map(p => p.text), decoded.samples, sampleRate);
     parts.forEach((part, i) => {

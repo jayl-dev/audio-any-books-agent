@@ -50,10 +50,14 @@ async function readPages(pdfPath, pageNums) {
 function buildCharStream({ viewport, items }) {
   let text = '';
   const chars = [];
+  const [va, vb, vc, vd, , vf] = viewport.transform;
   for (const item of items) {
     const str = item.str || '';
     if (!str.trim()) continue;
     const [a, b, c, d, x, y] = item.transform;
+    // Skip page numbers (number-only text in the top or bottom margin) so highlights don't reach them
+    const top = (vb * x + vd * y + vf) / viewport.height;
+    if (/^\s*([0-9]+|[ivxlcdm]+)\s*$/i.test(str) && (top < 0.15 || top > 0.85)) continue;
     const fontSize = Math.hypot(c, d) || Math.hypot(a, b);
     for (let i = 0; i < str.length; i++) {
       for (const ch of normalize(str[i])) {
@@ -140,14 +144,17 @@ function locateOnPage(stream, paragraphs) {
     if (range) cursor = range.end;
   }
 
-  // Unmatched paragraphs between two matched ones cover the text between them
+  // Unmatched paragraphs (e.g. spoken descriptions of code) cover the text between their matched
+  // neighbours; at the top or bottom of a page (a code block split across pages) they cover the
+  // text from the page start, or to the page end
+  const found = ranges.filter(Boolean);
   for (let i = 0; i < ranges.length; i++) {
-    if (ranges[i]) continue;
-    const prev = ranges.slice(0, i).reverse().find(Boolean);
-    const next = ranges.slice(i + 1).find(Boolean);
-    if (prev && next && next.start > prev.end) {
-      ranges[i] = { start: prev.end, end: next.start, gap: true };
-    }
+    if (ranges[i] || !found.length) continue;
+    const prev = ranges.slice(0, i).reverse().find(r => r && !r.gap);
+    const next = ranges.slice(i + 1).find(r => r && !r.gap);
+    const start = prev ? prev.end : 0;
+    const end = next ? next.start : stream.text.length;
+    if (end > start) ranges[i] = { start, end, gap: true };
   }
 
   return ranges.map(range => (range ? rangeToRects(stream, range) : []));
