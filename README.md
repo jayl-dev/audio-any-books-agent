@@ -115,9 +115,11 @@ node scripts/discover_pages.js --pdf "alice/alice-in-wonderland.pdf" --query "Ch
 # 2. Generate voiceover and player
 node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --title "Alice in Wonderland - Chapter 1" --prefix "alice_chapter_1"
 
-# 3. Launch local streaming player
-npm start
+# 3. Launch local streaming player for the folder holding the players (here, next to the PDF)
+node server.js alice          # or: npm start -- alice
 ```
+
+The server lists every `*_player.html` it finds in the chosen folder and its subfolders; with no folder it serves this project folder. You can also switch folders from the home page (`http://localhost:3000/?list`): browse to a folder or paste its path, then click **Serve this folder**. On Windows you can also drag a folder onto `start_player.bat`, or run it and paste a folder path when asked. It only accepts connections from your own computer; add `--host 0.0.0.0` to listen on your network so you can open the player on a phone.
 
 ### Optional: Gemini 3.8 TTS engine
 

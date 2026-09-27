@@ -170,10 +170,10 @@ node scripts/make_pdf_preloader.js --pdf "path/to/book.pdf"
 ### Step 6: Stream & Play
 Launch the local HTTP range streaming server:
 ```bash
-npm start
-# or: node server.js [dir]   # serves this repo by default, or the given folder
+node server.js "path/to/book-folder"   # or: npm start -- "path/to/book-folder"
+# no folder: serves this repo; also --dir <folder>, or AUDIOBOOK_DIR=<folder>
 ```
-The server finds `*_player.html` files in subfolders (e.g. next to each book) and launches your default browser at the first one, e.g. `http://localhost:3000/<book folder>/<prefix>_player.html`. For books stored outside this repo, pass the book's folder: `node server.js "path/to/book-folder"`.
+Pass the folder that holds the generated players, usually the book's folder (outputs are written next to the PDF). The server searches that folder and its subfolders for `*_player.html` files and opens the browser: straight to the player when there is only one, otherwise to a list of all players. On Windows, the user can also drag the folder onto `start_player.bat`, which otherwise asks for one. The home page (`http://localhost:3000/?list`) also has a folder picker to switch folders without restarting; it opens automatically when the served folder has no players. The server is reachable only from this computer; add `--host 0.0.0.0` to open it to other devices on the network (such as a phone), and `--no-open` to skip opening the browser.
 
 ---
 
