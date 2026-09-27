@@ -41,6 +41,7 @@ Unless the user already named an engine or voice in their request, ask them to c
 2. **Microsoft Edge voices**: free, no setup, and no usage limits. Very good, but less expressive than Gemini.
 
 - If a `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is already available, in the environment or in the repo-root `.env` file, say so: Gemini then needs no extra setup.
+- The same Gemini voices can also be used through **OpenRouter** (`--engine openrouter`) with an `OPENROUTER_API_KEY` (from https://openrouter.ai/keys, saved in the repo-root `.env`). Use it when the user asks for OpenRouter or already has an OpenRouter key but no Gemini key; it bills OpenRouter credits instead of a Google account, at the same listed per-token prices. Voices, styles, the book-type table below, and all Gemini notes apply unchanged.
 - If the user picks Gemini and has no key, walk them through it: create a key at https://aistudio.google.com/apikey, then save it as `GEMINI_API_KEY=<key>` in a `.env` file at the repo root (it is git-ignored). Wait for the key before synthesizing. If they would rather not set one up, use the Edge voices.
 - If the user wants no setup or no limits, or declines to choose, use the Edge voices.
 
@@ -59,7 +60,7 @@ Unless the user already named an engine or voice in their request, ask them to c
 - Pass the chosen ID to the generator with `--voice`, and mention the voice used in your final summary.
 - Avoid the older `en-US-GuyNeural` / `en-US-JennyNeural` unless the user asks for them explicitly — they sound noticeably more robotic.
 
-#### Gemini 3.8 TTS engine
+#### Gemini 3.8 TTS engine (direct or via OpenRouter)
 Gemini reads its key from `GEMINI_API_KEY` (or `GOOGLE_API_KEY`), either as an environment variable or in a `.env` file at the repo root (git-ignored). Beyond the free tier, Gemini costs roughly $0.54 per hour of audio on `gemini-3.8-flash-lite-tts` (default) or $0.81 per hour on `gemini-3.8-flash-tts` at 2026 prices, which double on 2027-01-01. Before synthesizing a long chapter, mention that usage beyond the free tier is billed and give the estimate. If synthesis fails with a quota or rate-limit error (429), the free-tier quota is used up: tell the user, and offer to wait for it to reset, enable billing, or switch to the Edge voices. Pages finished before the failure are cached, so a re-run resumes where it stopped. The generator retries rate limits (using the wait Google suggests) and false-positive safety blocks automatically; code-heavy technical books trigger these blocks often, and a page that stays blocked is re-sent one paragraph at a time. If a single paragraph is still refused, the run stops and names it: reword that paragraph slightly in the script and re-run. All Gemini audio carries an inaudible SynthID watermark.
 
 | Gemini voice | Style |

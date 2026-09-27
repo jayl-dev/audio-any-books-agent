@@ -136,6 +136,7 @@ node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf"
 - Match `--style` and the voice to the kind of book, e.g. a storyteller for novels or a tech expert for programming books. When you use the agent, it picks these for you; see the table in SKILL.md.
 - Scripts may include inline vocal tags such as `<sigh>` or `<short pause>` when using Gemini.
 - Gemini audio carries Google's inaudible SynthID watermark.
+- Prefer to pay through OpenRouter? Use `--engine openrouter` with `OPENROUTER_API_KEY` (from https://openrouter.ai/keys, or in `.env`). It runs the same Gemini 3.8 TTS models, voices and styles.
 
 ---
 

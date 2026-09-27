@@ -3,7 +3,7 @@
  * Part of the 'audio-any-books-agent' toolkit.
  *
  * Usage as CLI:
- *   node scripts/generate_chapter_voiceover.js --pdf <pdfPath> --pages <start>-<end> [--title <title>] [--prefix <prefix>] [--engine edge|gemini] [--voice <voiceName>] [--model <geminiModel>] [--style <direction>] [--bookPageOffset <offset>] [--outDir <dir>]
+ *   node scripts/generate_chapter_voiceover.js --pdf <pdfPath> --pages <start>-<end> [--title <title>] [--prefix <prefix>] [--engine edge|gemini|openrouter] [--voice <voiceName>] [--model <geminiModel>] [--style <direction>] [--bookPageOffset <offset>] [--outDir <dir>]
  *
  * Usage as Module:
  *   const { processChapter } = require('./generate_chapter_voiceover');
@@ -58,9 +58,12 @@ function sanitizeForSpeech(text, { preserveTags = false } = {}) {
 
 const DEFAULT_VOICES = {
   edge: 'en-US-AndrewMultilingualNeural',
-  gemini: 'Charon'
+  gemini: 'Charon',
+  // The same Gemini TTS models, called through OpenRouter
+  openrouter: 'Charon'
 };
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts';
+const GEMINI_ENGINES = ['gemini', 'openrouter'];
 // Each Gemini request is capped at 16,384 output tokens (~11 min of audio at 25 tokens/s),
 // so long pages are split into chunks of roughly 5 minutes of speech.
 const GEMINI_MAX_CHARS = 4500;
@@ -79,12 +82,12 @@ async function synthesizeSegment(cacheName, label, text, cacheDir, voice, { engi
   }
 
   let buf;
-  if (engine === 'gemini') {
-    buf = await synthesizeGemini(label, sanitizeForSpeech(text, { preserveTags: true }), voice, model || DEFAULT_GEMINI_MODEL, style);
+  if (GEMINI_ENGINES.includes(engine)) {
+    buf = await synthesizeGemini(label, sanitizeForSpeech(text, { preserveTags: true }), voice, model || DEFAULT_GEMINI_MODEL, style, engine);
   } else if (engine === 'edge') {
     buf = await synthesizeEdge(label, sanitizeForSpeech(text), cacheDir, voice);
   } else {
-    throw new Error(`Unknown TTS engine "${engine}". Use "edge" or "gemini".`);
+    throw new Error(`Unknown TTS engine "${engine}". Use "edge", "gemini" or "openrouter".`);
   }
   fs.writeFileSync(cachePath, buf);
   return buf;
@@ -189,7 +192,7 @@ async function encodeMp3(samples, sampleRate) {
   return Buffer.concat(parts);
 }
 
-// Load GEMINI_API_KEY from a .env file in the current directory or the repo root.
+// Load API keys (GEMINI_API_KEY, OPENROUTER_API_KEY) from a .env file in the current directory or the repo root.
 // Variables already set in the environment take precedence.
 function loadEnvFile() {
   for (const candidate of [path.resolve('.env'), path.join(__dirname, '..', '.env')]) {
@@ -220,33 +223,92 @@ function checkGeminiVoice(voice) {
   }
 }
 
-// One Gemini TTS request with retries; returns mono PCM
-async function geminiRequest(label, text, voice, model, style) {
+// Gemini TTS through Google's API
+async function googleSpeech(text, voice, model, style) {
   const client = getGeminiClient();
-  const maxAttempts = 5;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  const textPart = { type: 'text', text };
+  if (style) textPart.annotations = [{ type: 'speech_metadata', style }];
+  const interaction = await client.interactions.create({
+    model,
+    input: [{ type: 'user_input', content: [textPart] }],
+    response_format: { type: 'audio', mime_type: 'audio/wav' },
+    generation_config: { speech_config: [{ voice }] }
+  });
+  const audio = interaction.output_audio;
+  if (!audio || !audio.data) throw new Error('Response contained no audio');
+  return decodePcm(Buffer.from(audio.data, 'base64'), audio.sample_rate || 24000);
+}
+
+function getOpenRouterKey() {
+  loadEnvFile();
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error('The OpenRouter engine needs an API key. Set OPENROUTER_API_KEY (get one at https://openrouter.ai/keys).');
+  }
+  return apiKey;
+}
+
+// Gemini TTS through OpenRouter's speech endpoint; raw PCM (24 kHz, 16-bit, mono) comes back
+async function openRouterSpeech(text, voice, model, style) {
+  const body = { model: model.includes('/') ? model : `google/${model}`, input: text, voice, response_format: 'pcm' };
+  if (style) {
+    const google = { speech_metadata: { style } };
+    body.provider = { options: { 'google-ai-studio': google, 'google-vertex': google } };
+  }
+  const res = await fetch('https://openrouter.ai/api/v1/audio/speech', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${getOpenRouterKey()}`, 'Content-Type': 'application/json', 'X-Title': 'audio-any-books-agent' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    let message = await res.text();
     try {
-      const textPart = { type: 'text', text };
-      if (style) textPart.annotations = [{ type: 'speech_metadata', style }];
-      const interaction = await client.interactions.create({
-        model,
-        input: [{ type: 'user_input', content: [textPart] }],
-        response_format: { type: 'audio', mime_type: 'audio/wav' },
-        generation_config: { speech_config: [{ voice }] }
-      });
-      const audio = interaction.output_audio;
-      if (!audio || !audio.data) throw new Error('Response contained no audio');
-      return decodePcm(Buffer.from(audio.data, 'base64'), audio.sample_rate || 24000);
+      const { error } = JSON.parse(message);
+      // Upstream (Google) errors such as safety blocks are passed through in metadata.raw
+      message = [error.message, error.metadata && error.metadata.raw].filter(Boolean).join(' ');
+    } catch (_) {}
+    const retryAfter = res.headers.get('retry-after');
+    const err = new Error(`${res.status} ${message}${retryAfter ? ` Please retry in ${retryAfter}s.` : ''}`);
+    err.status = res.status;
+    err.body = message;
+    throw err;
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < 100) throw new Error('Response contained no audio');
+  return decodePcm(buf, 24000);
+}
+
+const MAX_ATTEMPTS = 5;
+// Safety-filter refusals of a multi-paragraph request before it is re-sent one paragraph at a time.
+// Refusals are much more likely on longer text, and each one takes about a minute, so switch early.
+const MAX_BLOCKS_BEFORE_SPLIT = 2;
+
+// One Gemini TTS request (direct or via OpenRouter) with retries; returns mono PCM.
+// maxBlocks caps safety-filter refusals separately from other failures such as rate limits.
+async function geminiRequest(label, text, voice, model, style, engine = 'gemini', { maxBlocks = MAX_ATTEMPTS } = {}) {
+  // Fail fast on a missing key rather than retrying it
+  if (engine === 'openrouter') getOpenRouterKey();
+  else getGeminiClient();
+  const speak = engine === 'openrouter' ? openRouterSpeech : googleSpeech;
+  let blocks = 0;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await speak(text, voice, model, style);
     } catch (err) {
       console.warn(`Attempt ${attempt} for ${label} failed: ${err.message}`);
       const status = err.status || err.code;
       // The safety filter occasionally blocks harmless text; the same request usually passes on retry
       const contentBlocked = /content_blocked|blocked for an unspecified policy reason/i.test(`${err.message} ${err.body || ''}`);
-      // Bad keys, unknown voices and malformed requests will not succeed on retry
-      if (attempt === maxAttempts || ([400, 401, 403, 404].includes(status) && !contentBlocked)) {
+      if (contentBlocked) blocks++;
+      // Bad keys, missing credits, unknown voices and malformed requests will not succeed on retry
+      if (attempt === MAX_ATTEMPTS || (contentBlocked && blocks >= maxBlocks) ||
+          ([400, 401, 402, 403, 404].includes(status) && !contentBlocked)) {
         if (status === 429) {
-          err.message += '\nThe Gemini quota is used up. Wait for it to reset, enable billing on the key, or use --engine edge.';
+          err.message += engine === 'openrouter'
+            ? '\nOpenRouter is rate limiting this key. Wait a bit and re-run, or use --engine edge.'
+            : '\nThe Gemini quota is used up. Wait for it to reset, enable billing on the key, or use --engine edge.';
         }
+        if (status === 402) err.message += '\nThe OpenRouter account is out of credits. Add credits at https://openrouter.ai/settings/credits.';
         err.contentBlocked = contentBlocked;
         throw err;
       }
@@ -268,14 +330,14 @@ function concatPcm(parts) {
   return samples;
 }
 
-async function synthesizeGemini(label, cleanText, voice, model, style) {
+async function synthesizeGemini(label, cleanText, voice, model, style, engine = 'gemini') {
   checkGeminiVoice(voice);
   const chunks = splitForTts(cleanText);
   const pcmParts = [];
   let sampleRate = 24000;
   for (let c = 0; c < chunks.length; c++) {
     const chunkLabel = chunks.length > 1 ? `${label} part ${c + 1}/${chunks.length}` : label;
-    const decoded = await geminiRequest(chunkLabel, chunks[c], voice, model, style);
+    const decoded = await geminiRequest(chunkLabel, chunks[c], voice, model, style, engine);
     sampleRate = decoded.sampleRate;
     pcmParts.push(decoded.samples);
   }
@@ -417,7 +479,7 @@ function blockedParagraphError(err, label, part, paragraphs) {
 
 // Voice a page's paragraphs with as few Gemini requests as possible; returns the MP3 and
 // each paragraph's start offset (seconds) within it
-async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style) {
+async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style, engine = 'gemini') {
   checkGeminiVoice(voice);
   const clean = paragraphs.map(p => sanitizeForSpeech(p, { preserveTags: true }));
   const chunks = packParagraphs(clean);
@@ -431,7 +493,9 @@ async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style
     const chunkLabel = chunks.length > 1 ? `${label} part ${c + 1}/${chunks.length}` : label;
     let decoded;
     try {
-      decoded = await geminiRequest(chunkLabel, parts.map(p => p.text).join('\n\n'), voice, model, style);
+      // A chunk of several paragraphs can fall back to single paragraphs, so give up on it sooner
+      const maxBlocks = parts.length > 1 ? MAX_BLOCKS_BEFORE_SPLIT : MAX_ATTEMPTS;
+      decoded = await geminiRequest(chunkLabel, parts.map(p => p.text).join('\n\n'), voice, model, style, engine, { maxBlocks });
     } catch (err) {
       if (!err.contentBlocked || parts.length === 1) throw blockedParagraphError(err, label, parts[0], paragraphs);
       // The safety filter keeps rejecting this chunk: send its paragraphs one at a time instead,
@@ -440,7 +504,7 @@ async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style
       for (const part of parts) {
         let single;
         try {
-          single = await geminiRequest(`${label} paragraph ${part.index + 1}`, part.text, voice, model, style);
+          single = await geminiRequest(`${label} paragraph ${part.index + 1}`, part.text, voice, model, style, engine);
         } catch (partErr) {
           throw blockedParagraphError(partErr, label, part, paragraphs);
         }
@@ -470,14 +534,14 @@ async function synthesizePageParagraphs(pageNum, paragraphs, cacheDir, voice, { 
   voice = voice || DEFAULT_VOICES[engine];
   const label = `Page ${pageNum}`;
 
-  if (engine === 'gemini') {
-    const cachePath = path.join(cacheDir, `page_${pageNum}_gemini.mp3`);
-    const offsetsPath = path.join(cacheDir, `page_${pageNum}_gemini.json`);
+  if (GEMINI_ENGINES.includes(engine)) {
+    const cachePath = path.join(cacheDir, `page_${pageNum}_${engine}.mp3`);
+    const offsetsPath = path.join(cacheDir, `page_${pageNum}_${engine}.json`);
     if (fs.existsSync(cachePath) && fs.existsSync(offsetsPath)) {
       console.log(`${label} found in cache, skipping synthesis.`);
       return { buf: fs.readFileSync(cachePath), offsets: JSON.parse(fs.readFileSync(offsetsPath, 'utf8')) };
     }
-    const result = await synthesizeGeminiParagraphs(label, paragraphs, voice, model || DEFAULT_GEMINI_MODEL, style);
+    const result = await synthesizeGeminiParagraphs(label, paragraphs, voice, model || DEFAULT_GEMINI_MODEL, style, engine);
     fs.writeFileSync(cachePath, result.buf);
     fs.writeFileSync(offsetsPath, JSON.stringify(result.offsets));
     return result;
@@ -513,7 +577,7 @@ async function processChapter({
     fs.mkdirSync(baseDir, { recursive: true });
   }
   console.log(`Output directory: ${baseDir}`);
-  console.log(`TTS engine: ${engine}${engine === 'gemini' ? ` (${model})` : ''}, voice: ${voice}`);
+  console.log(`TTS engine: ${engine}${GEMINI_ENGINES.includes(engine) ? ` (${model})` : ''}, voice: ${voice}`);
 
   const cacheDir = path.join(baseDir, `audio_${outputPrefix}_cache`);
   if (!fs.existsSync(cacheDir)) {
@@ -714,7 +778,7 @@ if (require.main === module) {
 
   (async () => {
     if (!DEFAULT_VOICES[engineArg]) {
-      console.error(`Unknown --engine "${engineArg}". Use "edge" or "gemini".`);
+      console.error(`Unknown --engine "${engineArg}". Use "edge", "gemini" or "openrouter".`);
       process.exit(1);
     }
     let pagesData = {};
@@ -751,7 +815,7 @@ Usage:
   node scripts/generate_chapter_voiceover.js --pdf "book.pdf" --pages 10-25 --title "Chapter Title" --prefix ch1
 
 Options:
-  --engine edge|gemini   TTS engine (default: edge; gemini needs GEMINI_API_KEY)
+  --engine edge|gemini|openrouter   TTS engine (default: edge). gemini needs GEMINI_API_KEY;
   --voice <name>         Edge voice (default ${DEFAULT_VOICES.edge}) or Gemini voice (default ${DEFAULT_VOICES.gemini})
   --model <id>           Gemini model (default ${DEFAULT_GEMINI_MODEL}; or gemini-3.8-flash-tts)
   --style "<direction>"  Gemini delivery direction, e.g. "warm, unhurried audiobook narrator"
