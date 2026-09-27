@@ -2,7 +2,7 @@
 
 An AI agent skill that turns any PDF into an audiobook. Clone this repo, open it in an AI agent harness, then ask the agent to generate the voiceover for you (see the [example prompt](#3-prompt-the-agent)).
 
-Once it's done, you'll get something like this: **[Live demo: Alice in Wonderland, Chapter 1](https://alice-chapter-1.zl25drexel.workers.dev/)**
+Once it's done, you'll get something like this: **[Live demo: Alice in Wonderland, Chapter 1](https://alice-chapter-1.zl25drexel.workers.dev/)** (narrated with Google's Gemini 3.8 TTS; see [how to use Gemini](#optional-gemini-38-tts-engine))
 
 <p align="center">
   <img src="screenshot.png" alt="Interactive player showing Alice in Wonderland Chapter 1 with synchronized audio controls" width="480">
