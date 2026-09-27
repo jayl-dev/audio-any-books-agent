@@ -61,11 +61,46 @@ const DEFAULT_VOICES = {
   gemini: 'Charon',
   // The same Gemini TTS models, called through OpenRouter
   openrouter: 'Charon',
-  // Google Cloud Text-to-Speech Chirp 3 HD voices (same voice names as Gemini)
+  // Google Cloud Text-to-Speech: Gemini-TTS models or Chirp 3 HD, which share voice names with Gemini
   'google-cloud': 'Charon'
 };
 const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash-lite-tts';
 const GEMINI_ENGINES = ['gemini', 'openrouter'];
+
+// Models available through Google Cloud Text-to-Speech. Gemini-TTS models take a style prompt and
+// run through the Agent Platform (Vertex AI) API; Chirp 3 HD is Cloud TTS's own voice model.
+const CHIRP_MODEL = 'chirp-3-hd';
+const GOOGLE_CLOUD_MODELS = {
+  'gemini-3.1-flash-tts-preview': 'Gemini 3.1 Flash TTS (recommended): expressive, follows style prompts',
+  'gemini-2.5-pro-tts': 'Gemini 2.5 Pro TTS: highest fidelity of the 2.5 models, slower',
+  'gemini-2.5-flash-tts': 'Gemini 2.5 Flash TTS: fast, follows style prompts',
+  'gemini-2.5-flash-lite-preview-tts': 'Gemini 2.5 Flash-Lite TTS: fastest and cheapest Gemini option',
+  [CHIRP_MODEL]: 'Chirp 3 HD: no style prompts; covered by the Cloud TTS monthly free tier'
+};
+
+const DEFAULT_MODELS = {
+  gemini: DEFAULT_GEMINI_MODEL,
+  openrouter: DEFAULT_GEMINI_MODEL,
+  'google-cloud': 'gemini-3.1-flash-tts-preview'
+};
+
+// Model ids such as google/gemini-3.8-flash-tts contain slashes; keep cache file names flat
+function safeName(name) {
+  return String(name).replace(/[^\w.-]+/g, '_');
+}
+
+// Gemini models sometimes read the style prompt aloud when the text is very short (a heading such as
+// "Module design." came out as "Clear, knowledgeable tech expert... Module design."), so short
+// paragraphs are sent without it; they are mostly headings, which are read neutrally anyway.
+const MIN_STYLED_CHARS = 60;
+function styleFor(text, style) {
+  return style && text.length >= MIN_STYLED_CHARS ? style : undefined;
+}
+
+// Whether an engine/model combination follows --style prompts
+function supportsStyle(engine, model) {
+  return GEMINI_ENGINES.includes(engine) || (engine === 'google-cloud' && model !== CHIRP_MODEL);
+}
 // Each Gemini request is capped at 16,384 output tokens (~11 min of audio at 25 tokens/s),
 // so long pages are split into chunks of roughly 5 minutes of speech.
 const GEMINI_MAX_CHARS = 4500;
@@ -77,7 +112,8 @@ async function synthesizePage(page, text, cacheDir, voice, options = {}) {
 // Synthesize one piece of narration to MP3, cached as <cacheName>.mp3 (per engine)
 async function synthesizeSegment(cacheName, label, text, cacheDir, voice, { engine = 'edge', model, style } = {}) {
   voice = voice || DEFAULT_VOICES[engine];
-  const cachePath = path.join(cacheDir, engine === 'edge' ? `${cacheName}.mp3` : `${cacheName}_${engine}.mp3`);
+  model = model || DEFAULT_MODELS[engine];
+  const cachePath = path.join(cacheDir, engine === 'edge' ? `${cacheName}.mp3` : `${cacheName}_${engine}_${safeName(model)}.mp3`);
   if (fs.existsSync(cachePath) && fs.statSync(cachePath).size > 1000) {
     console.log(`${label} found in cache, skipping synthesis.`);
     return fs.readFileSync(cachePath);
@@ -85,11 +121,11 @@ async function synthesizeSegment(cacheName, label, text, cacheDir, voice, { engi
 
   let buf;
   if (GEMINI_ENGINES.includes(engine)) {
-    buf = await synthesizeGemini(label, sanitizeForSpeech(text, { preserveTags: true }), voice, model || DEFAULT_GEMINI_MODEL, style, engine);
+    buf = await synthesizeGemini(label, sanitizeForSpeech(text, { preserveTags: true }), voice, model, style, engine);
   } else if (engine === 'edge') {
     buf = await synthesizeEdge(label, sanitizeForSpeech(text), cacheDir, voice);
   } else if (engine === 'google-cloud') {
-    buf = await synthesizeGoogleCloud(label, sanitizeForSpeech(text), voice);
+    buf = await synthesizeGoogleCloud(label, sanitizeForSpeech(text), voice, model, style);
   } else {
     throw new Error(`Unknown TTS engine "${engine}". Use "edge", "gemini", "openrouter" or "google-cloud".`);
   }
@@ -124,10 +160,13 @@ async function synthesizeEdge(label, cleanText, cacheDir, voice) {
   }
 }
 
-// Google Cloud Text-to-Speech (Chirp 3 HD). Authenticates with a service account key named by
-// GOOGLE_APPLICATION_CREDENTIALS (environment or .env; relative paths resolve against the repo root).
-// Requests are capped at 5,000 bytes of text, so long paragraphs are split by sentence.
-const GOOGLE_CLOUD_MAX_CHARS = 4000;
+// Google Cloud Text-to-Speech (Gemini-TTS models or Chirp 3 HD). Authenticates with a service account
+// key named by GOOGLE_APPLICATION_CREDENTIALS (environment or .env; relative paths resolve against the
+// repo root). Text is capped per request (5,000 bytes for Chirp, 4,000 bytes for Gemini-TTS), so long
+// paragraphs are split by sentence.
+const GOOGLE_CLOUD_MAX_CHARS = { chirp: 4000, gemini: 3500 };
+// Paragraph requests sent at once for this engine; Gemini-TTS takes several seconds per request
+const GOOGLE_CLOUD_CONCURRENCY = 4;
 let googleCloudAuth = null;
 
 async function getGoogleCloudToken() {
@@ -146,30 +185,35 @@ async function getGoogleCloudToken() {
   return (await client.getAccessToken()).token;
 }
 
-// A short voice name such as "Charon" means the US English Chirp 3 HD voice; a full name
-// such as "en-GB-Chirp3-HD-Charon" is used as given, with its language taken from the name
-function googleCloudVoice(voice) {
+// A short voice name such as "Charon" means US English; a full Chirp name such as
+// "en-GB-Chirp3-HD-Charon" sets the language (and, for Gemini-TTS models, just the voice name)
+function googleCloudVoice(voice, model) {
   if (/Neural$/.test(voice)) {
-    throw new Error(`"${voice}" is an Edge voice. Pick a Chirp 3 HD voice such as Charon, Kore or Puck.`);
+    throw new Error(`"${voice}" is an Edge voice. Pick a Gemini / Chirp 3 HD voice such as Charon, Kore or Puck.`);
   }
-  const name = voice.includes('-') ? voice : `en-US-Chirp3-HD-${voice}`;
-  return { name, languageCode: name.split('-').slice(0, 2).join('-') };
+  const parts = voice.split('-');
+  const languageCode = parts.length > 2 ? parts.slice(0, 2).join('-') : 'en-US';
+  const shortName = parts[parts.length - 1];
+  if (model === CHIRP_MODEL) return { languageCode, name: voice.includes('-') ? voice : `en-US-Chirp3-HD-${voice}` };
+  return { languageCode, name: shortName, modelName: model };
 }
 
-async function synthesizeGoogleCloud(label, cleanText, voice) {
-  const voiceParams = googleCloudVoice(voice);
-  const chunks = splitForTts(cleanText, GOOGLE_CLOUD_MAX_CHARS);
+async function synthesizeGoogleCloud(label, cleanText, voice, model = DEFAULT_MODELS['google-cloud'], style) {
+  const voiceParams = googleCloudVoice(voice, model);
+  const isChirp = model === CHIRP_MODEL;
+  const chunks = splitForTts(cleanText, isChirp ? GOOGLE_CLOUD_MAX_CHARS.chirp : GOOGLE_CLOUD_MAX_CHARS.gemini);
   const pcmParts = [];
   let sampleRate = 24000;
   for (let c = 0; c < chunks.length; c++) {
     const chunkLabel = chunks.length > 1 ? `${label} part ${c + 1}/${chunks.length}` : label;
+    let prompt = isChirp ? undefined : styleFor(chunks[c], style);
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         const res = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
           method: 'POST',
           headers: { Authorization: `Bearer ${await getGoogleCloudToken()}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            input: { text: chunks[c] },
+            input: prompt ? { text: chunks[c], prompt } : { text: chunks[c] },
             voice: voiceParams,
             audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: 24000 }
           })
@@ -181,6 +225,16 @@ async function synthesizeGoogleCloud(label, cleanText, voice) {
           throw err;
         }
         const decoded = decodePcm(Buffer.from(body.audioContent, 'base64'), 24000);
+        // Far longer audio than the text needs usually means the style prompt was read aloud (it adds
+        // about 4 seconds): redo it without the prompt. Expected length assumes ~15 characters a second.
+        const seconds = decoded.samples.length / decoded.sampleRate;
+        const expected = chunks[c].length / 15;
+        if (prompt && seconds - expected > Math.max(3, expected * 0.35)) {
+          console.warn(`${chunkLabel}: ${seconds.toFixed(1)}s of audio for ${chunks[c].length} characters; retrying without the style prompt.`);
+          prompt = undefined;
+          attempt--;
+          continue;
+        }
         sampleRate = decoded.sampleRate;
         pcmParts.push(decoded.samples);
         break;
@@ -188,7 +242,14 @@ async function synthesizeGoogleCloud(label, cleanText, voice) {
         console.warn(`Attempt ${attempt} for ${chunkLabel} failed: ${err.message}`);
         // Bad credentials, a disabled API, or an unknown voice will not succeed on retry
         if (attempt === MAX_ATTEMPTS || [400, 401, 403, 404].includes(err.status) || !err.status && /key|credentials/i.test(err.message)) {
-          if (err.status === 403) err.message += '\nCheck that the Cloud Text-to-Speech API is enabled for the project and the service account can use it.';
+          if (err.status === 403) {
+            err.message += isChirp
+              ? '\nCheck that the Cloud Text-to-Speech API is enabled for the project and the service account can use it.'
+              : '\nGemini-TTS models also need the Agent Platform (Vertex AI) API enabled and the "Agent Platform User" role (roles/aiplatform.user) on the service account, granted on the project\'s IAM page. Or use --model chirp-3-hd.';
+          }
+          if (err.status === 400 && /not supported/i.test(err.message)) {
+            err.message += `\nSupported --model values for google-cloud: ${Object.keys(GOOGLE_CLOUD_MODELS).join(', ')}.`;
+          }
           throw err;
         }
         await new Promise(r => setTimeout(r, (err.status === 429 ? 10000 : 2000) * attempt));
@@ -415,7 +476,7 @@ async function synthesizeGemini(label, cleanText, voice, model, style, engine = 
   let sampleRate = 24000;
   for (let c = 0; c < chunks.length; c++) {
     const chunkLabel = chunks.length > 1 ? `${label} part ${c + 1}/${chunks.length}` : label;
-    const decoded = await geminiRequest(chunkLabel, chunks[c], voice, model, style, engine);
+    const decoded = await geminiRequest(chunkLabel, chunks[c], voice, model, styleFor(chunks[c], style), engine);
     sampleRate = decoded.sampleRate;
     pcmParts.push(decoded.samples);
   }
@@ -582,7 +643,7 @@ async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style
       for (const part of parts) {
         let single;
         try {
-          single = await geminiRequest(`${label} paragraph ${part.index + 1}`, part.text, voice, model, style, engine);
+          single = await geminiRequest(`${label} paragraph ${part.index + 1}`, part.text, voice, model, styleFor(part.text, style), engine);
         } catch (partErr) {
           throw blockedParagraphError(partErr, label, part, paragraphs);
         }
@@ -610,30 +671,41 @@ async function synthesizeGeminiParagraphs(label, paragraphs, voice, model, style
 // stay within its request quota and finds paragraph breaks from the pauses in the audio.
 async function synthesizePageParagraphs(pageNum, paragraphs, cacheDir, voice, { engine = 'edge', model, style } = {}) {
   voice = voice || DEFAULT_VOICES[engine];
+  model = model || DEFAULT_MODELS[engine];
   const label = `Page ${pageNum}`;
 
   if (GEMINI_ENGINES.includes(engine)) {
-    const cachePath = path.join(cacheDir, `page_${pageNum}_${engine}.mp3`);
-    const offsetsPath = path.join(cacheDir, `page_${pageNum}_${engine}.json`);
+    const cachePath = path.join(cacheDir, `page_${pageNum}_${engine}_${safeName(model)}.mp3`);
+    const offsetsPath = path.join(cacheDir, `page_${pageNum}_${engine}_${safeName(model)}.json`);
     if (fs.existsSync(cachePath) && fs.existsSync(offsetsPath)) {
       console.log(`${label} found in cache, skipping synthesis.`);
       return { buf: fs.readFileSync(cachePath), offsets: JSON.parse(fs.readFileSync(offsetsPath, 'utf8')) };
     }
-    const result = await synthesizeGeminiParagraphs(label, paragraphs, voice, model || DEFAULT_GEMINI_MODEL, style, engine);
+    const result = await synthesizeGeminiParagraphs(label, paragraphs, voice, model, style, engine);
     fs.writeFileSync(cachePath, result.buf);
     fs.writeFileSync(offsetsPath, JSON.stringify(result.offsets));
     return result;
   }
 
-  const buffers = [];
+  // Edge and Google Cloud voice each paragraph separately (exact timings); Google Cloud sends a
+  // few paragraphs at once since its free tier and quota are counted in characters, not requests
+  const concurrency = engine === 'google-cloud' ? GOOGLE_CLOUD_CONCURRENCY : 1;
+  const buffers = new Array(paragraphs.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < paragraphs.length) {
+      const i = next++;
+      const paraLabel = paragraphs.length > 1 ? `${label} paragraph ${i + 1}` : label;
+      buffers[i] = await synthesizeSegment(`page_${pageNum}_p${i + 1}`, paraLabel, paragraphs[i], cacheDir, voice, { engine, model, style });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, paragraphs.length) }, worker));
+
   const offsets = [];
   let elapsed = 0;
-  for (let i = 0; i < paragraphs.length; i++) {
-    const paraLabel = paragraphs.length > 1 ? `${label} paragraph ${i + 1}` : label;
-    const buf = await synthesizeSegment(`page_${pageNum}_p${i + 1}`, paraLabel, paragraphs[i], cacheDir, voice, { engine, model, style });
+  for (const buf of buffers) {
     offsets.push(elapsed);
     elapsed += await mp3Duration(buf);
-    buffers.push(buf);
   }
   return { buf: Buffer.concat(buffers), offsets };
 }
@@ -645,18 +717,19 @@ async function processChapter({
   pdfPath,
   engine = 'edge',
   voice = DEFAULT_VOICES[engine],
-  model = DEFAULT_GEMINI_MODEL,
+  model,
   style = null,
   bookPageOffset = 0,
   pageMap = null,
   baseDir = pdfPath ? path.dirname(path.resolve(pdfPath)) : process.cwd()
 }) {
+  model = model || DEFAULT_MODELS[engine];
   if (!fs.existsSync(baseDir)) {
     fs.mkdirSync(baseDir, { recursive: true });
   }
   console.log(`Output directory: ${baseDir}`);
-  console.log(`TTS engine: ${engine}${GEMINI_ENGINES.includes(engine) ? ` (${model})` : ''}, voice: ${voice}`);
-  if (style && !GEMINI_ENGINES.includes(engine)) console.warn(`Note: --style only applies to Gemini voices; the ${engine} engine ignores it.`);
+  console.log(`TTS engine: ${engine}${model ? ` (${model})` : ''}, voice: ${voice}`);
+  if (style && !supportsStyle(engine, model)) console.warn(`Note: --style only applies to Gemini voices; ${model || engine} ignores it.`);
 
   const cacheDir = path.join(baseDir, `audio_${outputPrefix}_cache`);
   if (!fs.existsSync(cacheDir)) {
@@ -844,7 +917,7 @@ if (require.main === module) {
   const prefixArg = getArg('prefix') || 'chapter_output';
   const engineArg = (getArg('engine') || 'edge').toLowerCase();
   const voiceArg = getArg('voice') || DEFAULT_VOICES[engineArg];
-  const modelArg = getArg('model') || DEFAULT_GEMINI_MODEL;
+  const modelArg = getArg('model') || DEFAULT_MODELS[engineArg];
   const styleArg = getArg('style');
   const scriptArg = getArg('script'); // JSON file with { pageNum: text }
   const offsetArg = parseInt(getArg('bookPageOffset') || '0', 10);
@@ -897,11 +970,12 @@ Options:
   --engine <name>        TTS engine (default: edge, free Microsoft voices):
                            gemini        Gemini 3.8 TTS via Google (GEMINI_API_KEY)
                            openrouter    Gemini 3.8 TTS via OpenRouter (OPENROUTER_API_KEY)
-                           google-cloud  Google Cloud Text-to-Speech Chirp 3 HD (GOOGLE_APPLICATION_CREDENTIALS)
+                           google-cloud  Google Cloud Text-to-Speech (GOOGLE_APPLICATION_CREDENTIALS)
   --voice <name>         Edge voice (default ${DEFAULT_VOICES.edge}), or a Gemini / Chirp 3 HD voice
                          such as Charon (default), Kore or Sadaltager
-  --model <id>           Gemini model (default ${DEFAULT_GEMINI_MODEL}; or gemini-3.8-flash-tts)
-  --style "<direction>"  Gemini delivery direction, e.g. "warm, unhurried audiobook narrator" (ignored by google-cloud)
+  --model <id>           gemini / openrouter: ${DEFAULT_GEMINI_MODEL} (default) or gemini-3.8-flash-tts
+                         google-cloud: ${Object.entries(GOOGLE_CLOUD_MODELS).map(([id, d]) => `\n                           ${id}${id === DEFAULT_MODELS['google-cloud'] ? ' (default)' : ''}: ${d.replace(/ \(recommended\)/, '')}`).join('')}
+  --style "<direction>"  Delivery direction for Gemini models, e.g. "warm, unhurried audiobook narrator" (ignored by Edge and Chirp 3 HD)
   --outDir <dir>         Output folder (default: the PDF's folder)
       `);
       process.exit(0);

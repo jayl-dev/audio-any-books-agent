@@ -138,17 +138,30 @@ node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf"
 - Gemini audio carries Google's inaudible SynthID watermark.
 - Prefer to pay through OpenRouter? Use `--engine openrouter` with `OPENROUTER_API_KEY` (from https://openrouter.ai/keys, or in `.env`). It runs the same Gemini 3.8 TTS models, voices and styles.
 
-### Optional: Google Cloud Text-to-Speech (Chirp 3 HD)
+### Optional: Google Cloud Text-to-Speech
 
-High-quality voices with the same names as Gemini's, and a large monthly free tier counted in characters (check your Cloud console for the current allowance). No style direction, but fast, with exact paragraph timings.
+Gemini-TTS models and Chirp 3 HD voices through a Google Cloud service account, using the same voice names as Gemini. Each paragraph is voiced separately, so the highlight timings are exact.
+
+> **Google Cloud vs. the Gemini API:** the newest Gemini TTS models (such as Gemini 3.8) may not be available through Google Cloud Text-to-Speech yet; they appear in the Gemini API first. But Google Cloud has a much more generous free tier: Chirp 3 HD voices get 1 million free characters every month, roughly 17 hours of narration, which is good enough for most personal use and can keep hours of audiobooks free each month. (The Gemini-TTS models on Google Cloud are likely billed separately from that free tier; check your billing report.)
+
+| `--model` | Notes |
+| :--- | :--- |
+| `gemini-3.1-flash-tts-preview` (recommended, default) | Expressive, follows `--style` prompts |
+| `gemini-2.5-pro-tts` | Highest fidelity of the 2.5 models, slower |
+| `gemini-2.5-flash-tts` | Fast, follows `--style` prompts |
+| `gemini-2.5-flash-lite-preview-tts` | Fastest and cheapest Gemini option |
+| `chirp-3-hd` | No style prompts; covered by the monthly Cloud TTS free tier (1 million characters a month) |
+
+Setup:
 
 1. In a Google Cloud project with billing attached, enable the **Cloud Text-to-Speech API**.
 2. Create a service account, download its JSON key, and put it in a `credentials/` folder in this repo (git-ignored; never commit key files).
 3. Add `GOOGLE_APPLICATION_CREDENTIALS=credentials/<your-key>.json` to `.env`.
+4. For the Gemini models, also enable the **Agent Platform (Vertex AI) API** and grant the service account the **Agent Platform User** role (`roles/aiplatform.user`) on the project's **IAM** page. Gemini usage is likely billed separately from the Chirp free tier; check your billing report.
 
 ```bash
 node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --prefix "alice_chapter_1" \
-  --engine google-cloud --voice Achird
+  --engine google-cloud --voice Achird --style "warm, playful storyteller reading aloud to a child"
 ```
 
 ---

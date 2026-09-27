@@ -38,16 +38,26 @@ Unless the user already named an engine or voice in their request, ask them to c
 **First, the engine.** Offer these options, with Gemini first as the recommendation:
 
 1. **Google Gemini 3.8 TTS (Recommended)**: studio-quality, expressive narration with a delivery style matched to the book. Gemini's free tier is usually enough for some personal use, but the user has to get a free API key from Google AI Studio first. The free quota can be small (as low as 10 requests per day); the generator uses about one request per page, so the free tier covers a few pages a day, and a whole book needs billing enabled on the key.
-2. **Google Cloud Text-to-Speech, Chirp 3 HD voices**: high-quality voices with the same names as Gemini's (Charon, Kore, Sadaltager...), but without style direction. Google Cloud's monthly free tier is counted in characters and is large for personal use (reported as 1 million characters a month for Chirp 3 HD, roughly 17 hours of narration; the user can confirm in their Cloud console). Needs more setup: a Google Cloud project with billing attached, the Cloud Text-to-Speech API enabled, and a service account key file. Fast, with exact paragraph timings and no safety refusals.
+2. **Google Cloud Text-to-Speech** (`--engine google-cloud`): Gemini-TTS models and Chirp 3 HD voices through a Google Cloud service account, with the same voice names as Gemini (Charon, Kore, Sadaltager...). Each paragraph is its own request, so paragraph timings are exact. Needs more setup (see below). If the user picks it, offer the model with `--model`, recommending Gemini 3.1 Flash:
+
+   | `--model` | Notes |
+   | :--- | :--- |
+   | `gemini-3.1-flash-tts-preview` (Recommended, default) | Expressive, follows `--style` prompts |
+   | `gemini-2.5-pro-tts` | Highest fidelity of the 2.5 models, slower |
+   | `gemini-2.5-flash-tts` | Fast, follows `--style` prompts |
+   | `gemini-2.5-flash-lite-preview-tts` | Fastest and cheapest Gemini option |
+   | `chirp-3-hd` | No style prompts; covered by the Cloud TTS monthly free tier (1 million characters a month, roughly 17 hours of narration, resetting each month) |
+
+   The Gemini-TTS models run through Google's Agent Platform (Vertex AI) and are likely billed as Gemini usage rather than from the Chirp 3 HD free tier; tell the user this is unconfirmed and that their Cloud billing report shows the actual charge.
 3. **Microsoft Edge voices**: free, no setup, and no usage limits. Very good, but less expressive than Gemini.
 
 - If a `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) is already available, in the environment or in the repo-root `.env` file, say so: Gemini then needs no extra setup.
 - The same Gemini voices can also be used through **OpenRouter** (`--engine openrouter`) with an `OPENROUTER_API_KEY` (from https://openrouter.ai/keys, saved in the repo-root `.env`). Use it when the user asks for OpenRouter or already has an OpenRouter key but no Gemini key; it bills OpenRouter credits instead of a Google account, at the same listed per-token prices. Voices, styles, the book-type table below, and all Gemini notes apply unchanged.
 - If the user picks Gemini and has no key, walk them through it: create a key at https://aistudio.google.com/apikey, then save it as `GEMINI_API_KEY=<key>` in a `.env` file at the repo root (it is git-ignored). Wait for the key before synthesizing. If they would rather not set one up, use the Edge voices.
-- If `GOOGLE_APPLICATION_CREDENTIALS` is set (in the environment or `.env`) and points to an existing key file, Google Cloud needs no extra setup: say so. If the user picks it without a key, walk them through it: in the Google Cloud console, enable the Cloud Text-to-Speech API, create a service account, download its JSON key, save the key in the repo's `credentials/` folder (git-ignored), and add `GOOGLE_APPLICATION_CREDENTIALS=credentials/<file>.json` to `.env`. Never commit key files.
+- If `GOOGLE_APPLICATION_CREDENTIALS` is set (in the environment or `.env`) and points to an existing key file, Google Cloud needs no extra setup: say so. If the user picks it without a key, walk them through it: in a Google Cloud project with billing attached, enable the Cloud Text-to-Speech API, create a service account, download its JSON key, save the key in the repo's `credentials/` folder (git-ignored), and add `GOOGLE_APPLICATION_CREDENTIALS=credentials/<file>.json` to `.env`. Never commit key files. The Gemini-TTS models additionally need the **Agent Platform (Vertex AI) API** enabled and the **"Agent Platform User"** role (`roles/aiplatform.user`) granted to that service account on the project's **IAM** page (not on the service account's own Permissions tab, and not on another account such as the App Engine default service account). Role changes take a minute or two to apply. `chirp-3-hd` needs only the Text-to-Speech API.
 - If the user wants no setup or no limits, or declines to choose, use the Edge voices.
 
-**Then, the voice.** For Gemini, recommend the voice and style matched to the book type (see "Match the Gemini style and voice to the book type" below). For Google Cloud, recommend the voice from the same table (`--engine google-cloud --voice <name>`; `--style` is ignored). For Edge, offer these options, with Andrew first as the recommended default:
+**Then, the voice.** For Gemini, recommend the voice and style matched to the book type (see "Match the Gemini style and voice to the book type" below). For Google Cloud, recommend the voice and style from the same table (`--engine google-cloud --voice <name> --style "<direction>"`); `--style` is ignored by `chirp-3-hd`. For Edge, offer these options, with Andrew first as the recommended default:
 
 | Voice ID | Style | Best for |
 | :--- | :--- | :--- |
