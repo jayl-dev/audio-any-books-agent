@@ -19,7 +19,9 @@ const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
 const mp3Duration = require('mp3-duration');
 const { createPlayerHtml } = require('./create_player_html');
 const { preloaderInfo, createPreloader } = require('./make_pdf_preloader');
-const { locateParagraphs } = require('./paragraph_locator');
+const { locateParagraphs, locateInBlocks } = require('./paragraph_locator');
+const { openEpub, extractChapter, scriptFromBlocks } = require('./epub_reader');
+const { createEpubPlayerHtml } = require('./create_epub_player_html');
 
 function formatTime(seconds) {
   const hrs = Math.floor(seconds / 3600);
@@ -240,6 +242,13 @@ async function synthesizeGoogleCloud(label, cleanText, voice, model = DEFAULT_MO
         break;
       } catch (err) {
         console.warn(`Attempt ${attempt} for ${chunkLabel} failed: ${err.message}`);
+        const isSafetyFilter = /violates|safety|usage guidelines/i.test(err.message);
+        if (isSafetyFilter && attempt < MAX_ATTEMPTS) {
+          console.warn(`${chunkLabel}: Vertex AI filter false-positive, retrying attempt ${attempt + 1} without style prompt...`);
+          prompt = undefined;
+          await new Promise(r => setTimeout(r, 2000 * attempt));
+          continue;
+        }
         // Bad credentials, a disabled API, or an unknown voice will not succeed on retry
         if (attempt === MAX_ATTEMPTS || [400, 401, 403, 404].includes(err.status) || !err.status && /key|credentials/i.test(err.message)) {
           if (err.status === 403) {
@@ -715,15 +724,20 @@ async function processChapter({
   outputPrefix,
   title,
   pdfPath,
+  // EPUB input: the book file and the 1-based chapter number from epub_reader.js --toc
+  epubPath,
+  epubChapter,
   engine = 'edge',
   voice = DEFAULT_VOICES[engine],
   model,
   style = null,
   bookPageOffset = 0,
   pageMap = null,
-  baseDir = pdfPath ? path.dirname(path.resolve(pdfPath)) : process.cwd()
+  baseDir = (pdfPath || epubPath) ? path.dirname(path.resolve(pdfPath || epubPath)) : process.cwd()
 }) {
   model = model || DEFAULT_MODELS[engine];
+  // Relative folders are taken from the current directory, like on the command line
+  baseDir = path.resolve(baseDir);
   if (!fs.existsSync(baseDir)) {
     fs.mkdirSync(baseDir, { recursive: true });
   }
@@ -745,14 +759,21 @@ async function processChapter({
     throw new Error('No page data provided to processChapter.');
   }
 
-  const chapterTitle = title || outputPrefix.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  // EPUB chapters carry their own title and blocks (used for the highlight and the reader page)
+  const epubChapterData = epubPath ? extractChapter(openEpub(epubPath), epubChapter) : null;
+  const chapterTitle = title
+    || (epubChapterData && `${epubChapterData.bookTitle} - ${epubChapterData.title}`)
+    || outputPrefix.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 
   // 1. Save full transcript
   let scriptMd = `# ${chapterTitle}\n\n`;
   if (pdfPath) scriptMd += `Source PDF: \`${path.basename(pdfPath)}\`\n\n---\n\n`;
+  if (epubPath) scriptMd += `Source EPUB: \`${path.basename(epubPath)}\`, chapter ${epubChapter}: ${epubChapterData.title}\n\n---\n\n`;
   for (const pageNum of sortedPages) {
     const bookPage = pageMap && pageMap[pageNum] !== undefined ? pageMap[pageNum] : pageNum + bookPageOffset;
-    scriptMd += `## PDF Page ${pageNum} (Book Page ${bookPage})\n\n${pagesData[pageNum]}\n\n---\n\n`;
+    scriptMd += epubPath
+      ? `## Part ${pageNum}\n\n${pagesData[pageNum]}\n\n---\n\n`
+      : `## PDF Page ${pageNum} (Book Page ${bookPage})\n\n${pagesData[pageNum]}\n\n---\n\n`;
   }
   fs.writeFileSync(path.join(baseDir, `${outputPrefix}_script.md`), scriptMd, 'utf8');
   console.log(`Saved transcript script: ${outputPrefix}_script.md`);
@@ -827,7 +848,7 @@ async function processChapter({
   // Save WebVTT
   let vtt = `WEBVTT - ${chapterTitle}\n\n`;
   for (const m of markers) {
-    vtt += `${m.startTime} --> ${m.endTime}\nPage ${m.page} (Book p. ${m.bookPage})\n\n`;
+    vtt += `${m.startTime} --> ${m.endTime}\n${epubPath ? `Part ${m.page}` : `Page ${m.page} (Book p. ${m.bookPage})`}\n\n`;
   }
   fs.writeFileSync(path.join(baseDir, `${outputPrefix}_markers.vtt`), vtt, 'utf8');
   console.log(`Saved markers WebVTT: ${outputPrefix}_markers.vtt`);
@@ -846,10 +867,18 @@ async function processChapter({
       startSeconds: Number(startSec.toFixed(3)),
       endSeconds: Number(endSec.toFixed(3)),
       text: p.text,
-      rects: []
+      ...(epubPath ? { blocks: [] } : { rects: [] })
     };
   });
-  if (pdfPath && fs.existsSync(pdfPath)) {
+  if (epubChapterData) {
+    // Map each narrated paragraph to the book's own blocks (paragraphs, code, images...)
+    const byPart = {};
+    for (const p of paragraphTimings) (byPart[p.page] = byPart[p.page] || []).push(p.text);
+    const blocksByPart = locateInBlocks(epubChapterData.blocks, byPart);
+    for (const m of paragraphMarkers) m.blocks = blocksByPart[m.page][m.paragraph - 1] || [];
+    const located = paragraphMarkers.filter(m => m.blocks.length).length;
+    console.log(`Located ${located} of ${paragraphMarkers.length} paragraph(s) in the EPUB text`);
+  } else if (pdfPath && fs.existsSync(pdfPath)) {
     try {
       const byPage = {};
       for (const p of paragraphTimings) (byPage[p.page] = byPage[p.page] || []).push(p.text);
@@ -866,7 +895,7 @@ async function processChapter({
 
   // 5a. Base64 PDF preloader so the player opens straight from disk (file://) without CORS errors
   let preloader = null;
-  if (pdfPath && fs.existsSync(pdfPath)) {
+  if (!epubPath && pdfPath && fs.existsSync(pdfPath)) {
     const { fileName, varName } = preloaderInfo(pdfPath);
     const preloaderPath = path.join(baseDir, fileName);
     if (!fs.existsSync(preloaderPath) || fs.statSync(preloaderPath).mtimeMs < fs.statSync(pdfPath).mtimeMs) {
@@ -877,7 +906,19 @@ async function processChapter({
   }
 
   // 5. Generate Synchronized HTML Player
-  try {
+  if (epubChapterData) {
+    const playerHtml = createEpubPlayerHtml({
+      title: chapterTitle,
+      bookTitle: epubChapterData.bookTitle,
+      chapterTitle: epubChapterData.title,
+      audioFilename: `${outputPrefix}.mp3`,
+      markers,
+      paragraphs: paragraphMarkers,
+      blocks: epubChapterData.blocks
+    });
+    fs.writeFileSync(path.join(baseDir, `${outputPrefix}_player.html`), playerHtml, 'utf8');
+    console.log(`Generated EPUB Reader Player: ${outputPrefix}_player.html`);
+  } else try {
     const pdfFilename = pdfPath ? path.basename(pdfPath) : 'book.pdf';
     const playerHtml = createPlayerHtml({
       title: chapterTitle,
@@ -912,6 +953,8 @@ if (require.main === module) {
   };
 
   const pdfArg = getArg('pdf');
+  const epubArg = getArg('epub');
+  const chapterArg = parseInt(getArg('chapter'), 10);
   const pagesArg = getArg('pages');
   const titleArg = getArg('title');
   const prefixArg = getArg('prefix') || 'chapter_output';
@@ -922,7 +965,7 @@ if (require.main === module) {
   const scriptArg = getArg('script'); // JSON file with { pageNum: text }
   const offsetArg = parseInt(getArg('bookPageOffset') || '0', 10);
   const outDirArg = getArg('outDir');
-  const bookDir = pdfArg ? path.dirname(path.resolve(pdfArg)) : process.cwd();
+  const bookDir = (pdfArg || epubArg) ? path.dirname(path.resolve(pdfArg || epubArg)) : process.cwd();
   // --script may be given relative to the cwd or to the book's folder
   const scriptPath = scriptArg && !fs.existsSync(scriptArg) && fs.existsSync(path.resolve(bookDir, scriptArg))
     ? path.resolve(bookDir, scriptArg)
@@ -934,9 +977,19 @@ if (require.main === module) {
       process.exit(1);
     }
     let pagesData = {};
+    if (epubArg && !chapterArg) {
+      console.error('EPUB input needs --chapter <N>; list the chapters with: node scripts/epub_reader.js --epub "book.epub" --toc');
+      process.exit(1);
+    }
 
     if (scriptPath && fs.existsSync(scriptPath)) {
       pagesData = JSON.parse(fs.readFileSync(scriptPath, 'utf8'));
+    } else if (epubArg) {
+      // No prepared script: narrate the chapter's text as-is (code, images and tables are skipped)
+      const chapter = extractChapter(openEpub(epubArg), chapterArg);
+      console.log(`No --script given: narrating "${chapter.title}" as extracted; code blocks, images and tables are skipped.`);
+      const draft = scriptFromBlocks(chapter.blocks.filter(b => ['heading', 'text', 'list'].includes(b.kind)));
+      pagesData = draft;
     } else if (pdfArg && pagesArg) {
       const pdfParse = require('pdf-parse');
       const [startP, endP] = pagesArg.split('-').map(Number);
@@ -965,6 +1018,8 @@ if (require.main === module) {
 Usage:
   node scripts/generate_chapter_voiceover.js --script pages.json --title "Chapter Title" --prefix ch1
   node scripts/generate_chapter_voiceover.js --pdf "book.pdf" --pages 10-25 --title "Chapter Title" --prefix ch1
+  node scripts/generate_chapter_voiceover.js --epub "book.epub" --chapter 4 --script ch4.json --prefix ch4
+    (chapter numbers come from: node scripts/epub_reader.js --epub "book.epub" --toc)
 
 Options:
   --engine <name>        TTS engine (default: edge, free Microsoft voices):
@@ -976,7 +1031,7 @@ Options:
   --model <id>           gemini / openrouter: ${DEFAULT_GEMINI_MODEL} (default) or gemini-3.8-flash-tts
                          google-cloud: ${Object.entries(GOOGLE_CLOUD_MODELS).map(([id, d]) => `\n                           ${id}${id === DEFAULT_MODELS['google-cloud'] ? ' (default)' : ''}: ${d.replace(/ \(recommended\)/, '')}`).join('')}
   --style "<direction>"  Delivery direction for Gemini models, e.g. "warm, unhurried audiobook narrator" (ignored by Edge and Chirp 3 HD)
-  --outDir <dir>         Output folder (default: the PDF's folder)
+  --outDir <dir>         Output folder (default: the book's folder)
       `);
       process.exit(0);
     }
@@ -986,6 +1041,8 @@ Options:
       outputPrefix: prefixArg,
       title: titleArg,
       pdfPath: pdfArg,
+      epubPath: epubArg,
+      epubChapter: chapterArg,
       engine: engineArg,
       voice: voiceArg,
       model: modelArg,

@@ -8,7 +8,7 @@ Once it's done, you'll get something like this: **[Live demo: Alice in Wonderlan
   <img src="screenshot.png" alt="Interactive player showing Alice in Wonderland Chapter 1 with synchronized audio controls" width="480">
 </p>
 
-> Turn **ANY PDF book** into a presentation-quality, page-synchronized audiobook with natural spoken descriptions for code & diagrams, alongside an interactive dual-pane web reader.
+> Turn **ANY PDF or EPUB book** into a presentation-quality, page-synchronized audiobook with natural spoken descriptions for code & diagrams, alongside an interactive dual-pane web reader.
 
 **Zero manual commands required.** Just clone and prompt your AI agent!
 
@@ -25,7 +25,7 @@ cd audio-any-books-agent
 ```
 
 ### 2. Open in your AI Agent Harness
-Open this folder in **Google Antigravity** (or any agent environment that supports `.agents/skills/` or `SKILL.md`). The `pdf-book-voiceover` skill is automatically loaded into the agent's skillset.
+Open this folder in **Google Antigravity** (or any agent environment that supports `.agents/skills/` or `SKILL.md`). The `book-voiceover` skill is automatically loaded into the agent's skillset.
 
 ### 3. Prompt the Agent:
 
@@ -60,6 +60,33 @@ Or specify exact pages and voice preferences:
 
 Or use Google's Gemini 3.8 TTS for more expressive narration (needs a `GEMINI_API_KEY`):
 > **"Use the voiceover skill with the Gemini engine and the Charon voice to generate chapter 1 of alice/alice-in-wonderland.pdf"**
+
+---
+
+## EPUB Books
+
+DRM-free EPUBs work too (for example from [Project Gutenberg](https://www.gutenberg.org/)):
+
+> **"Use the voiceover skill to generate chapter 1 of my_book.epub"**
+
+EPUB chapters come from the book's table of contents, and the text comes straight from the book, so paragraphs are clean. Instead of page images, you get a **reflowing reader** that fits any screen, including phones:
+
+- The chapter's text and images are built into the page, which opens by double-click.
+- The paragraph being read is highlighted and kept in view; scroll away and a **Back to narration** button takes you back.
+- Click any paragraph to jump the narration there.
+- Adjustable text size, light/dark theme, speed, and previous/next paragraph (`[` / `]`).
+
+To run it by hand:
+
+```bash
+node scripts/epub_reader.js --epub "my_book.epub" --toc                                # list chapters
+node scripts/epub_reader.js --epub "my_book.epub" --chapter 4 --out chapter1_raw.json   # draft script
+node scripts/generate_chapter_voiceover.js --epub "my_book.epub" --chapter 4 --script chapter1_raw.json --prefix my_book_chapter_1
+```
+
+Chapter numbers are table-of-contents entries, so they can differ from the book's own numbering: front matter such as a title page or contents list often comes first, so the first chapter may be entry 3 or 4.
+
+DRM-protected EPUBs (most store-bought Kindle, Apple or Kobo books) can't be read. Fixed-layout EPUBs, such as picture books, work better converted to PDF first.
 
 ---
 

@@ -7,11 +7,13 @@
     "start": "node server.js",
     "discover": "node scripts/discover_pages.js",
     "extract": "node scripts/extract_page_text.js",
-    "preload": "node scripts/make_pdf_preloader.js"
+    "preload": "node scripts/make_pdf_preloader.js",
+    "epub": "node scripts/epub_reader.js"
   },
   "keywords": [
     "audiobook",
     "pdf",
+    "epub",
     "voiceover",
     "edge-tts",
     "gemini-tts",
@@ -28,6 +30,7 @@
     "google-auth-library": "^11.1.0",
     "mp3-duration": "^1.1.0",
     "msedge-tts": "^2.0.8",
+    "node-html-parser": "^9.0.4",
     "pdf-parse": "^1.1.1"
   }
 }

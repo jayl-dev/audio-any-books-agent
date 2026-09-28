@@ -26,3 +26,6 @@ npm-debug.log*
 # Google Cloud service account keys
 secret-gist-*.json
 credentials/
+
+# Book files
+*.epub

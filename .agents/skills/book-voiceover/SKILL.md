@@ -1,10 +1,10 @@
 ---
-name: pdf-book-voiceover
+name: book-voiceover
 description: >-
-  Generates word-for-word, presentation-style MP3 voiceovers from ANY PDF book with natural spoken descriptions for code snippets, formulas, diagrams, and tables, alongside exact page-flip synchronization markers (JSON, WebVTT, CSV) and an immersive dual-pane HTML reader. Use this skill whenever asked to generate voiceovers, audiobooks, or page-synced readings for specific chapters or page ranges of any PDF.
+  Generates word-for-word, presentation-style MP3 voiceovers from ANY PDF or DRM-free EPUB book with natural spoken descriptions for code snippets, formulas, diagrams, and tables, alongside exact synchronization markers (JSON, WebVTT, CSV) and an interactive reader (a dual-pane page reader for PDFs, a reflowing text reader for EPUBs). Use this skill whenever asked to generate voiceovers, audiobooks, or synced readings for specific chapters or page ranges of any PDF or EPUB.
 ---
 
-# Universal PDF Book Voiceover & Interactive Player Skill
+# Book Voiceover & Interactive Player Skill
 
 This skill provides an automated, resilient workflow for transforming any PDF book into a synchronized, presentation-quality audiobook with an interactive dual-pane canvas reader and exact millisecond page-turn markers.
 
@@ -23,10 +23,10 @@ This skill provides an automated, resilient workflow for transforming any PDF bo
 
 ## Step-by-Step Procedure for AI Agents
 
-When prompted to generate voiceovers for a chapter or page range of a PDF:
+When prompted to generate voiceovers for a chapter or page range of a PDF (for an **EPUB**, Steps 0 and 0.5 are the same, then follow "EPUB Books" below instead of Steps 1-5):
 
 ### Step 0: Verify & Install Dependencies
-Before running any script, check if `node_modules` exists. If missing or if dependencies (`msedge-tts`, `mp3-duration`, `pdf-parse`, `@google/genai`, `@breezystack/lamejs`) are not installed, automatically execute:
+Before running any script, check if `node_modules` exists. If missing or if dependencies (`msedge-tts`, `mp3-duration`, `pdf-parse`, `@google/genai`, `@breezystack/lamejs`, `google-auth-library`, `node-html-parser`) are not installed, automatically execute:
 ```bash
 npm install
 ```
@@ -174,6 +174,30 @@ node server.js "path/to/book-folder"   # or: npm start -- "path/to/book-folder"
 # no folder: serves this repo; also --dir <folder>, or AUDIOBOOK_DIR=<folder>
 ```
 Pass the folder that holds the generated players, usually the book's folder (outputs are written next to the PDF). The server searches that folder and its subfolders for `*_player.html` files and opens the browser: straight to the player when there is only one, otherwise to a list of all players. On Windows, the user can also drag the folder onto `start_player.bat`, which otherwise asks for one. The home page (`http://localhost:3000/?list`) also has a folder picker to switch folders without restarting; it opens automatically when the served folder has no players. The server is reachable only from this computer; add `--host 0.0.0.0` to open it to other devices on the network (such as a phone), and `--no-open` to skip opening the browser.
+
+---
+
+## EPUB Books
+
+DRM-free EPUBs (for example from Project Gutenberg, or books sold DRM-free) are supported natively: the text comes from the book's own HTML, so paragraphs are explicit and there are no line breaks or split words to repair. DRM-protected EPUBs (most store-bought Kindle, Apple or Kobo books) cannot be read; `epub_reader.js` reports this. For fixed-layout EPUBs (picture books, comics), `--toc` warns that converting to PDF (for example with Calibre's `ebook-convert`) and using the PDF workflow gives better results.
+
+1. **List the chapters** (numbers come from the table of contents; nested entries are indented):
+   ```bash
+   node scripts/epub_reader.js --epub "path/to/book.epub" --toc
+   ```
+2. **Extract the chapter** as a draft narration script (and a readable Markdown copy for review):
+   ```bash
+   node scripts/epub_reader.js --epub "path/to/book.epub" --chapter 4 --out chapter4_raw.json
+   node scripts/epub_reader.js --epub "path/to/book.epub" --chapter 4 --out chapter4_raw.md
+   ```
+   The JSON is `{ "1": "...", "2": "..." }`: parts of roughly a page (they only group paragraphs for synthesis), with paragraphs separated by blank lines. Code blocks appear as `CODE:` followed by the code, images as `IMAGE: <alt text>`, and tables as `TABLE: ...`. Decorative lines such as "* * *" are already dropped.
+3. **Prepare the script** exactly as in Step 2 for PDFs: keep prose verbatim, and replace each `CODE:`, `IMAGE:` and `TABLE:` paragraph with a spoken `Code example:`, `Diagram description:` or `Table summary:` paragraph (the EPUB's image alt text is often a good starting point). Keep one paragraph per book paragraph; do not merge or split paragraphs, since each is matched back to the book's text for the highlight. Keep exactly one description per code block, image or table, in the book's order and starting with those exact prefixes: descriptions cannot be matched by their words, so each is paired with the next unclaimed block of its kind (code, image or table) between the matched paragraphs around it. Dropping a block (for example a decorative image) is fine.
+4. **Generate** with the same engine, voice and style options as PDFs:
+   ```bash
+   node scripts/generate_chapter_voiceover.js --epub "path/to/book.epub" --chapter 4 --script chapter4.json --prefix "book_chapter_4" --engine <engine> --voice <voice>
+   ```
+   The title defaults to "<book title> - <chapter title>" from the EPUB; pass `--title` to override it. Without `--script`, the chapter's text is narrated as extracted, skipping code, images and tables.
+5. **Outputs** go next to the EPUB, with the same files as for PDFs (`<prefix>.mp3`, markers, `<prefix>_paragraphs.json` where each paragraph lists the book `blocks` it covers, transcript), plus `<prefix>_player.html`: a **reflowing reader** with the chapter's text and images built in (it opens by double-click; only the MP3 is loaded from beside it). It highlights the paragraph being read and scrolls to follow it (scrolling away pauses following until "Back to narration" is clicked), and clicking any paragraph jumps the audio there. Controls: play/pause, ±5s, previous/next paragraph, speed, font size, light/dark theme. Keys: `Space`, `←`/`→`, `[`/`]` (paragraph), `H` (highlight), `F` (follow), `T` (theme), `+`/`-` (text size).
 
 ---
 
