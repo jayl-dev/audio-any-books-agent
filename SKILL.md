@@ -26,9 +26,9 @@ This skill provides an automated, resilient workflow for transforming any PDF bo
 When prompted to generate voiceovers for a chapter or page range of a PDF (for an **EPUB**, Steps 0 and 0.5 are the same, then follow "EPUB Books" below instead of Steps 1-5):
 
 ### Step 0: Verify & Install Dependencies
-Before running any script, check if `node_modules` exists. If missing or if dependencies (`msedge-tts`, `mp3-duration`, `pdf-parse`, `@google/genai`, `@breezystack/lamejs`, `google-auth-library`, `node-html-parser`) are not installed, automatically execute:
+The skill's dependencies are listed in `.agents/skills/book-voiceover/package.json` (the `package.json` next to this skill's `SKILL.md`). Before running any script, check that `.agents/skills/book-voiceover/node_modules` exists; if it is missing, or a script fails with "Cannot find module", automatically install them into the skill folder:
 ```bash
-npm install
+npm install --prefix .agents/skills/book-voiceover
 ```
 The user never needs to run `npm install` manually; the agent handles environment setup automatically.
 

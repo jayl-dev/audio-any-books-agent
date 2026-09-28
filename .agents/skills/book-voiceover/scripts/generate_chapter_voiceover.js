@@ -23,14 +23,6 @@ const { locateParagraphs, locateInBlocks } = require('./paragraph_locator');
 const { openEpub, extractChapter, scriptFromBlocks } = require('./epub_reader');
 const { createEpubPlayerHtml } = require('./create_epub_player_html');
 
-// The project root (where .env and credentials/ live): the nearest folder above this script with a package.json
-const PROJECT_ROOT = (() => {
-  for (let dir = __dirname; ; dir = path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
-    if (path.dirname(dir) === dir) return path.join(__dirname, '..');
-  }
-})();
-
 function formatTime(seconds) {
   const hrs = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
@@ -172,7 +164,7 @@ async function synthesizeEdge(label, cleanText, cacheDir, voice) {
 
 // Google Cloud Text-to-Speech (Gemini-TTS models or Chirp 3 HD). Authenticates with a service account
 // key named by GOOGLE_APPLICATION_CREDENTIALS (environment or .env; relative paths resolve against the
-// repo root). Text is capped per request (5,000 bytes for Chirp, 4,000 bytes for Gemini-TTS), so long
+// folder holding .env). Text is capped per request (5,000 bytes for Chirp, 4,000 bytes for Gemini-TTS), so long
 // paragraphs are split by sentence.
 const GOOGLE_CLOUD_MAX_CHARS = { chirp: 4000, gemini: 3500 };
 // Paragraph requests sent at once for this engine; Gemini-TTS takes several seconds per request
@@ -181,12 +173,12 @@ let googleCloudAuth = null;
 
 async function getGoogleCloudToken() {
   if (!googleCloudAuth) {
-    loadEnvFile();
+    const baseDir = loadEnvFile() || process.cwd();
     let keyFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
     if (!keyFile) {
       throw new Error('The google-cloud engine needs a service account key. Set GOOGLE_APPLICATION_CREDENTIALS to the key file path (in .env or the environment).');
     }
-    if (!path.isAbsolute(keyFile)) keyFile = path.join(PROJECT_ROOT, keyFile);
+    if (!path.isAbsolute(keyFile)) keyFile = path.join(baseDir, keyFile);
     if (!fs.existsSync(keyFile)) throw new Error(`Service account key not found: ${keyFile}`);
     const { GoogleAuth } = require('google-auth-library');
     googleCloudAuth = new GoogleAuth({ keyFile, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
@@ -348,15 +340,23 @@ async function encodeMp3(samples, sampleRate) {
   return Buffer.concat(parts);
 }
 
-// Load API keys (GEMINI_API_KEY, OPENROUTER_API_KEY) from a .env file in the current directory or the repo root.
-// Variables already set in the environment take precedence.
+// Load API keys (GEMINI_API_KEY, OPENROUTER_API_KEY) from a .env file in the current directory, or else the
+// nearest one in a folder above this script (the project root when the skill lives in a project).
+// Variables already set in the environment take precedence. Returns the folder of the file loaded.
+let envDir = null;
 function loadEnvFile() {
-  for (const candidate of [path.resolve('.env'), path.join(PROJECT_ROOT, '.env')]) {
-    if (fs.existsSync(candidate)) {
-      process.loadEnvFile(candidate);
-      return;
-    }
+  if (envDir) return envDir;
+  const candidates = [path.resolve('.env')];
+  for (let dir = __dirname; ; dir = path.dirname(dir)) {
+    candidates.push(path.join(dir, '.env'));
+    if (path.dirname(dir) === dir) break;
   }
+  const found = candidates.find(c => fs.existsSync(c));
+  if (found) {
+    process.loadEnvFile(found);
+    envDir = path.dirname(found);
+  }
+  return envDir;
 }
 
 let geminiClient = null;

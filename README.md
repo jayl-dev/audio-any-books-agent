@@ -39,7 +39,7 @@ Open this folder in **Google Antigravity** (or any agent environment that suppor
 
 Once you give the prompt, the agent autonomously executes the full production workflow:
 
-1. **Sets Up Environment**: Checks if `node_modules` is present and runs `npm install` automatically if any dependencies are missing.
+1. **Sets Up Environment**: Installs the skill's dependencies into `.agents/skills/book-voiceover/` automatically if they are missing (running `npm install` at the repo root does the same).
 2. **Finds the Chapter**: For a PDF, scans `alice/alice-in-wonderland.pdf` and identifies that Chapter 1 (*"Down the Rabbit-Hole"*) spans **PDF pages 4 to 7**. For an EPUB, reads the book's table of contents.
 3. **Prepares Spoken Script**: Reads narrative text verbatim, sanitizes mathematical/programming symbols, and inserts conversational descriptions for illustrations and diagrams (`Diagram description: ...`).
 4. **Synthesizes Neural Audio**: Asks which engine you want. It recommends **Google Gemini 3.8 TTS** for studio-quality narration styled to the book; the free tier is usually enough for some personal use (its quota can be as low as 10 requests a day, about one per page), but you need a free API key from Google AI Studio. **Microsoft Edge voices** (default `en-US-AndrewMultilingualNeural`; also Ava, Emma, Brian, or British Sonia/Ryan) are free with no setup and no limits. Audio is generated page by page with automatic caching and retry on network hiccups.
@@ -198,6 +198,12 @@ Setup:
 node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --prefix "alice_chapter_1" \
   --engine google-cloud --voice Achird --style "warm, playful storyteller reading aloud to a child"
 ```
+
+---
+
+## Credits
+
+This project was designed and programmed by a human, with the code written by AI: Google's Gemini 3.8 and Anthropic's Claude Opus 5.5.
 
 ---
 

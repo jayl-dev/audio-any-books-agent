@@ -4,6 +4,7 @@
   "description": "Transform any PDF book into synchronized, presentation-quality audiobooks with dual-pane HTML reader and precise page-turn markers.",
   "main": "server.js",
   "scripts": {
+    "postinstall": "npm install --prefix .agents/skills/book-voiceover",
     "start": "node server.js",
     "discover": "node .agents/skills/book-voiceover/scripts/discover_pages.js",
     "extract": "node .agents/skills/book-voiceover/scripts/extract_page_text.js",
@@ -23,14 +24,5 @@
     "ai-agents"
   ],
   "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "@breezystack/lamejs": "^1.2.7",
-    "@google/genai": "^2.24.0",
-    "google-auth-library": "^11.1.0",
-    "mp3-duration": "^1.1.0",
-    "msedge-tts": "^2.0.8",
-    "node-html-parser": "^9.0.4",
-    "pdf-parse": "^1.1.1"
-  }
+  "license": "MIT"
 }

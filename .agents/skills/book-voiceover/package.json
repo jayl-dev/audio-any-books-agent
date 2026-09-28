@@ -1,0 +1,16 @@
+{
+  "name": "book-voiceover",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agent skill scripts that turn PDF and EPUB chapters into synchronized audiobooks with an interactive player.",
+  "license": "MIT",
+  "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@google/genai": "^2.24.0",
+    "google-auth-library": "^11.1.0",
+    "mp3-duration": "^1.1.0",
+    "msedge-tts": "^2.0.8",
+    "node-html-parser": "^9.0.4",
+    "pdf-parse": "^1.1.1"
+  }
+}
