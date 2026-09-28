@@ -1,6 +1,6 @@
 # Audio Any Books Agent
 
-An AI agent skill that turns any PDF into an audiobook. Clone this repo, open it in an AI agent harness, then ask the agent to generate the voiceover for you (see the [example prompt](#3-prompt-the-agent)).
+An AI agent skill that turns any PDF or EPUB book into an audiobook. Clone this repo, open it in an AI agent harness, then ask the agent to generate the voiceover for you (see the [example prompt](#3-prompt-the-agent)).
 
 Once it's done, you'll get something like this: **[Live demo: Alice in Wonderland, Chapter 1](https://alice-chapter-1.zl25drexel.workers.dev/)** (narrated with Google's Gemini 3.8 TTS; see [how to use Gemini](#optional-gemini-38-tts-engine))
 
@@ -8,7 +8,7 @@ Once it's done, you'll get something like this: **[Live demo: Alice in Wonderlan
   <img src="screenshot.png" alt="Interactive player showing Alice in Wonderland Chapter 1 with synchronized audio controls" width="480">
 </p>
 
-> Turn **ANY PDF or EPUB book** into a presentation-quality, page-synchronized audiobook with natural spoken descriptions for code & diagrams, alongside an interactive dual-pane web reader.
+> Turn **ANY PDF or EPUB book** into a presentation-quality, synchronized audiobook with natural spoken descriptions for code & diagrams, alongside an interactive web reader: a dual-pane page view for PDFs, or a reflowing text view for EPUBs.
 
 **Zero manual commands required.** Just clone and prompt your AI agent!
 
@@ -40,20 +40,22 @@ Open this folder in **Google Antigravity** (or any agent environment that suppor
 Once you give the prompt, the agent autonomously executes the full production workflow:
 
 1. **Sets Up Environment**: Checks if `node_modules` is present and runs `npm install` automatically if any dependencies are missing.
-2. **Discovers Page Boundaries**: Scans `alice/alice-in-wonderland.pdf` and identifies that Chapter 1 (*"Down the Rabbit-Hole"*) spans **PDF pages 4 to 7**.
+2. **Finds the Chapter**: For a PDF, scans `alice/alice-in-wonderland.pdf` and identifies that Chapter 1 (*"Down the Rabbit-Hole"*) spans **PDF pages 4 to 7**. For an EPUB, reads the book's table of contents.
 3. **Prepares Spoken Script**: Reads narrative text verbatim, sanitizes mathematical/programming symbols, and inserts conversational descriptions for illustrations and diagrams (`Diagram description: ...`).
 4. **Synthesizes Neural Audio**: Asks which engine you want. It recommends **Google Gemini 3.8 TTS** for studio-quality narration styled to the book; the free tier is usually enough for some personal use (its quota can be as low as 10 requests a day, about one per page), but you need a free API key from Google AI Studio. **Microsoft Edge voices** (default `en-US-AndrewMultilingualNeural`; also Ava, Emma, Brian, or British Sonia/Ryan) are free with no setup and no limits. Audio is generated page by page with automatic caching and retry on network hiccups.
 5. **Computes Precise Markers**: Concatenates audio and calculates millisecond-accurate timestamps in **JSON**, **WebVTT** (`.vtt`), and **CSV**.
-6. **Builds Interactive Dual-Pane Player**: Generates `alice_chapter_1_player.html` with synchronized page flips, drag-to-pan, and pinch-to-zoom (up to 3.8x).
-7. **Prepares Offline Zero-CORS Data**: Generates the base64 preloader so you can double-click the HTML player directly from your desktop (`file:///`) without browser origin warnings.
+6. **Builds the Interactive Player**: Generates `alice_chapter_1_player.html`. For a PDF, a dual-pane page reader with synchronized page flips, drag-to-pan, and pinch-to-zoom (up to 3.8x); for an EPUB, a reflowing text reader that follows the narration paragraph by paragraph.
+7. **Makes It Open Offline**: For a PDF, generates a base64 copy of the book next to the player; an EPUB player has the chapter's text and images built in. Either way, you can double-click the HTML player directly from your desktop (`file:///`) without browser origin warnings.
 
 ---
 
-## Generating Voiceovers for Any Other PDF Book
+## Generating Voiceovers for Any Other Book
 
-To generate voiceovers for any other book or chapter, simply drop your PDF file into the project and send a prompt:
+To generate voiceovers for any other book or chapter, point the agent at your PDF or EPUB file (anywhere on your computer; the results are saved next to it):
 
 > **"Use the voiceover skill to generate chapter 2 of my_book.pdf"**
+
+> **"Use the voiceover skill to generate chapter 3 of my_book.epub"**
 
 Or specify exact pages and voice preferences:
 > **"Use the voiceover skill to generate pages 50 to 75 of deep_learning.pdf using the en-US-AvaMultilingualNeural voice"**
@@ -92,6 +94,8 @@ DRM-protected EPUBs (most store-bought Kindle, Apple or Kobo books) can't be rea
 
 ## Interactive Player Features
 
+These describe the PDF player; the EPUB reader's features are listed under [EPUB Books](#epub-books) above.
+
 - **Dual-Pane Spread**: Emulates a physical open book (two pages side-by-side on desktop landscape, single-pane on mobile portrait).
 - **Drag-to-Pan & 3.8x Zoom**: Smooth freeform navigation with mouse drag or multi-touch pinch. Double-click or press `R` to reset.
 - **Real-Time Auto Flipping**: Turns pages automatically in sync with the audio narration.
@@ -112,28 +116,30 @@ DRM-protected EPUBs (most store-bought Kindle, Apple or Kobo books) can't be rea
 | `H` | Toggle Paragraph Highlight |
 | `F` | Toggle Fullscreen |
 
+The EPUB reader uses `Space` and `←` / `→` the same way, `[` / `]` for the previous / next paragraph, `+` / `-` for text size, `H` for the highlight, `F` to follow the narration, and `T` for light / dark.
+
 ---
 
 ## Generated Deliverables
 
-When the agent finishes, you will find these files **in the same folder as the source PDF** (e.g. `alice/`):
+When the agent finishes, you will find these files **in the same folder as the source book** (PDF or EPUB, e.g. `alice/`):
 
 | File | Description |
 | :--- | :--- |
 | `<prefix>.mp3` | Master concatenated audiobook audio (24 kHz, 48 kbps mono MP3) |
-| `<prefix>_player.html` | Interactive dual-pane synchronized web player |
+| `<prefix>_player.html` | Interactive synchronized player: dual-pane page view (PDF) or reflowing text reader (EPUB) |
 | `<prefix>_markers.json` | Structured array of page-turn millisecond timestamps |
 | `<prefix>_markers.vtt` | Standard WebVTT chapters / subtitle track |
 | `<prefix>_markers.csv` | Spreadsheet format for synchronization tools |
-| `<prefix>_paragraphs.json` | Per-paragraph timestamps, text, and the paragraph's position on the PDF page |
+| `<prefix>_paragraphs.json` | Per-paragraph timestamps, text, and where the paragraph is: its position on the PDF page, or the EPUB paragraphs it covers |
 | `<prefix>_script.md` | Complete word-for-word narration transcript |
-| `<slug>_pdf_data.js` | Base64 preloader for zero-CORS direct offline opening |
+| `<slug>_pdf_data.js` | PDF only: base64 copy of the book for zero-CORS direct offline opening |
 
 ---
 
 ## Optional: Manual CLI Commands (Without Agent)
 
-If you ever wish to run the pipeline manually via terminal commands:
+If you ever wish to run the pipeline manually via terminal commands (for EPUBs, see the commands under [EPUB Books](#epub-books); steps 3 onward are the same):
 
 ```bash
 # 1. Discover chapters
