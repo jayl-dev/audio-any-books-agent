@@ -5,10 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "discover": "node scripts/discover_pages.js",
-    "extract": "node scripts/extract_page_text.js",
-    "preload": "node scripts/make_pdf_preloader.js",
-    "epub": "node scripts/epub_reader.js"
+    "discover": "node .agents/skills/book-voiceover/scripts/discover_pages.js",
+    "extract": "node .agents/skills/book-voiceover/scripts/extract_page_text.js",
+    "preload": "node .agents/skills/book-voiceover/scripts/make_pdf_preloader.js",
+    "epub": "node .agents/skills/book-voiceover/scripts/epub_reader.js"
   },
   "keywords": [
     "audiobook",

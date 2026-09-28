@@ -4,8 +4,8 @@
  * Scans a PDF and prints page numbers matching queries (e.g. "Chapter 1", "Introduction").
  *
  * Usage:
- *   node scripts/discover_pages.js --pdf "book.pdf" --query "Chapter 1"
- *   node scripts/discover_pages.js --pdf "book.pdf" --toc
+ *   node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf "book.pdf" --query "Chapter 1"
+ *   node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf "book.pdf" --toc
  */
 
 const fs = require('fs');
@@ -26,12 +26,12 @@ if (!pdfPath) {
 discover_pages.js - Scan a PDF to locate chapters and page boundaries.
 
 Usage:
-  node scripts/discover_pages.js --pdf <path-to-pdf> --query <keyword-or-chapter>
-  node scripts/discover_pages.js --pdf <path-to-pdf> --toc
+  node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf <path-to-pdf> --query <keyword-or-chapter>
+  node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf <path-to-pdf> --toc
 
 Examples:
-  node scripts/discover_pages.js --pdf "book.pdf" --query "Chapter 1"
-  node scripts/discover_pages.js --pdf "book.pdf" --toc
+  node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf "book.pdf" --query "Chapter 1"
+  node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf "book.pdf" --toc
   `);
   process.exit(0);
 }

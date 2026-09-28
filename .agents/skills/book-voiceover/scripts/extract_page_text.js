@@ -4,8 +4,8 @@
  * Extracts text from specified PDF pages into a JSON or Markdown file for editing/curation.
  *
  * Usage:
- *   node scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1_raw.json
- *   node scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1_raw.md
+ *   node .agents/skills/book-voiceover/scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1_raw.json
+ *   node .agents/skills/book-voiceover/scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1_raw.md
  */
 
 const fs = require('fs');
@@ -28,13 +28,13 @@ if (!pdfPath || !pagesArg) {
 extract_page_text.js - Extract raw text per page for review and narration script drafting.
 
 Usage:
-  node scripts/extract_page_text.js --pdf <pdfPath> --pages <start>-<end> [--out <output.json|.md>]
+  node .agents/skills/book-voiceover/scripts/extract_page_text.js --pdf <pdfPath> --pages <start>-<end> [--out <output.json|.md>]
 
   Relative --out paths resolve against the PDF's folder (default: extracted_pages.json).
 
 Examples:
-  node scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1.json
-  node scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1.md
+  node .agents/skills/book-voiceover/scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1.json
+  node .agents/skills/book-voiceover/scripts/extract_page_text.js --pdf "book.pdf" --pages 25-37 --out chapter1.md
   `);
   process.exit(0);
 }
@@ -82,6 +82,7 @@ pdf(buf, {
     return '';
   }
 }).then(() => {
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const isMd = outPath.toLowerCase().endsWith('.md');
   if (isMd) {
     let md = `# Extracted Pages: ${path.basename(pdfPath)} (Pages ${startP}–${endP})\n\n`;

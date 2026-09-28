@@ -6,8 +6,8 @@
  * build the reader page, so a narrated paragraph can be highlighted in the text.
  *
  * Usage:
- *   node scripts/epub_reader.js --epub book.epub --toc
- *   node scripts/epub_reader.js --epub book.epub --chapter 3 [--out chapter3_raw.json|.md]
+ *   node .agents/skills/book-voiceover/scripts/epub_reader.js --epub book.epub --toc
+ *   node .agents/skills/book-voiceover/scripts/epub_reader.js --epub book.epub --chapter 3 [--out chapter3_raw.json|.md]
  *
  * Relative --out paths resolve against the EPUB's folder (default: extracted_chapter.json).
  * The JSON output is a narration script draft: { "1": "...", "2": "..." }, one entry per part of
@@ -331,8 +331,8 @@ if (require.main === module) {
 epub_reader.js - List and extract chapters from a DRM-free EPUB.
 
 Usage:
-  node scripts/epub_reader.js --epub <book.epub> --toc
-  node scripts/epub_reader.js --epub <book.epub> --chapter <N> [--out <file.json|file.md>]
+  node .agents/skills/book-voiceover/scripts/epub_reader.js --epub <book.epub> --toc
+  node .agents/skills/book-voiceover/scripts/epub_reader.js --epub <book.epub> --chapter <N> [--out <file.json|file.md>]
 
   Relative --out paths resolve against the EPUB's folder (default: extracted_chapter.json).
 `);
@@ -349,6 +349,7 @@ Usage:
     if (!n) throw new Error('Pass --toc to list chapters, or --chapter <N> to extract one.');
     const chapter = extractChapter(epub, n);
     const outPath = path.resolve(path.dirname(path.resolve(epubPath)), getArg('out') || 'extracted_chapter.json');
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
     if (outPath.toLowerCase().endsWith('.md')) {
       let md = `# ${chapter.bookTitle}: ${chapter.title}\n\n`;
       for (const b of chapter.blocks) {

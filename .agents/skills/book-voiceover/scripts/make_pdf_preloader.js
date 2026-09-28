@@ -4,7 +4,7 @@
  * Encodes a PDF file into base64 JavaScript to allow direct file:/// browser opening without CORS errors.
  *
  * Usage:
- *   node scripts/make_pdf_preloader.js --pdf "path/to/book.pdf" [--out "book_pdf_data.js"]
+ *   node .agents/skills/book-voiceover/scripts/make_pdf_preloader.js --pdf "path/to/book.pdf" [--out "book_pdf_data.js"]
  *
  * Usage as Module:
  *   const { createPreloader } = require('./make_pdf_preloader');
@@ -49,12 +49,12 @@ if (require.main === module) {
 make_pdf_preloader.js - Create a zero-CORS base64 embedded JS file for a PDF.
 
 Usage:
-  node scripts/make_pdf_preloader.js --pdf <pdf-path> [--out <output-js-path>]
+  node .agents/skills/book-voiceover/scripts/make_pdf_preloader.js --pdf <pdf-path> [--out <output-js-path>]
 
   Relative --out paths resolve against the PDF's folder (default: <slug>_pdf_data.js).
 
 Example:
-  node scripts/make_pdf_preloader.js --pdf "path/to/book.pdf"
+  node .agents/skills/book-voiceover/scripts/make_pdf_preloader.js --pdf "path/to/book.pdf"
   `);
     process.exit(0);
   }

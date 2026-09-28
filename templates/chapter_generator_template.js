@@ -6,7 +6,7 @@
  * and run: `node generate_mybook_ch1.js`
  */
 
-const { processChapter } = require('../scripts/generate_chapter_voiceover');
+const { processChapter } = require('../.agents/skills/book-voiceover/scripts/generate_chapter_voiceover');
 
 // 1. Define page text mapping (PDF Document Page Number -> Spoken Script)
 const pagesData = {

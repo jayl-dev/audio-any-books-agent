@@ -81,9 +81,9 @@ EPUB chapters come from the book's table of contents, and the text comes straigh
 To run it by hand:
 
 ```bash
-node scripts/epub_reader.js --epub "my_book.epub" --toc                                # list chapters
-node scripts/epub_reader.js --epub "my_book.epub" --chapter 4 --out chapter1_raw.json   # draft script
-node scripts/generate_chapter_voiceover.js --epub "my_book.epub" --chapter 4 --script chapter1_raw.json --prefix my_book_chapter_1
+node .agents/skills/book-voiceover/scripts/epub_reader.js --epub "my_book.epub" --toc                                # list chapters
+node .agents/skills/book-voiceover/scripts/epub_reader.js --epub "my_book.epub" --chapter 4 --out chapter1_raw.json   # draft script
+node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --epub "my_book.epub" --chapter 4 --script chapter1_raw.json --prefix my_book_chapter_1
 ```
 
 Chapter numbers are table-of-contents entries, so they can differ from the book's own numbering: front matter such as a title page or contents list often comes first, so the first chapter may be entry 3 or 4.
@@ -143,10 +143,10 @@ If you ever wish to run the pipeline manually via terminal commands (for EPUBs, 
 
 ```bash
 # 1. Discover chapters
-node scripts/discover_pages.js --pdf "alice/alice-in-wonderland.pdf" --query "Chapter I"
+node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf "alice/alice-in-wonderland.pdf" --query "Chapter I"
 
 # 2. Generate voiceover and player
-node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --title "Alice in Wonderland - Chapter 1" --prefix "alice_chapter_1"
+node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --title "Alice in Wonderland - Chapter 1" --prefix "alice_chapter_1"
 
 # 3. Launch local streaming player for the folder holding the players (here, next to the PDF)
 node server.js alice          # or: npm start -- alice
@@ -162,7 +162,7 @@ The default engine is Microsoft Edge TTS, which is free and needs no key. For mo
 # Get a key at https://aistudio.google.com/apikey, then either export it
 # or put GEMINI_API_KEY=... in a .env file at the repo root (git-ignored)
 export GEMINI_API_KEY=...
-node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --prefix "alice_chapter_1" \
+node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --prefix "alice_chapter_1" \
   --engine gemini --voice Achird --style "warm, playful storyteller reading aloud to a child"
 ```
 
@@ -195,7 +195,7 @@ Setup:
 4. For the Gemini models, also enable the **Agent Platform (Vertex AI) API** and grant the service account the **Agent Platform User** role (`roles/aiplatform.user`) on the project's **IAM** page. Gemini usage is likely billed separately from the Chirp free tier; check your billing report.
 
 ```bash
-node scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --prefix "alice_chapter_1" \
+node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --pdf "alice/alice-in-wonderland.pdf" --pages 4-7 --prefix "alice_chapter_1" \
   --engine google-cloud --voice Achird --style "warm, playful storyteller reading aloud to a child"
 ```
 

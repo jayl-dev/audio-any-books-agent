@@ -112,17 +112,17 @@ Before synthesizing with Gemini, work out what kind of book it is from its title
 ### Step 1: Discover Page Boundaries
 Find the exact 1-indexed PDF document page numbers and printed book page numbers:
 ```bash
-node scripts/discover_pages.js --pdf "path/to/book.pdf" --query "Chapter 1"
+node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf "path/to/book.pdf" --query "Chapter 1"
 ```
 Or check the Table of Contents:
 ```bash
-node scripts/discover_pages.js --pdf "path/to/book.pdf" --toc
+node .agents/skills/book-voiceover/scripts/discover_pages.js --pdf "path/to/book.pdf" --toc
 ```
 
 ### Step 2: Extract & Prepare Page Scripts
 Extract the raw text for the target range:
 ```bash
-node scripts/extract_page_text.js --pdf "path/to/book.pdf" --pages 25-37 --out chapter1_raw.json
+node .agents/skills/book-voiceover/scripts/extract_page_text.js --pdf "path/to/book.pdf" --pages 25-37 --out chapter1_raw.json
 ```
 This writes `path/to/chapter1_raw.json` (next to the PDF).
 For each page:
@@ -134,11 +134,11 @@ For each page:
 - Clean bullet symbols (``, `•`, `■`) so speech engines pronounce sentences cleanly.
 
 ### Step 3: Run the Resilient TTS Synthesizer
-Run the synthesizer using `scripts/generate_chapter_voiceover.js` or a curated generator script:
+Run the synthesizer using `.agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js` or a curated generator script:
 ```bash
-node scripts/generate_chapter_voiceover.js --script chapter1_raw.json --title "Book Title - Chapter 1" --prefix "book_chapter_1" --pdf "path/to/book.pdf" --voice "<voice chosen in Step 0.5>"
+node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --script chapter1_raw.json --title "Book Title - Chapter 1" --prefix "book_chapter_1" --pdf "path/to/book.pdf" --voice "<voice chosen in Step 0.5>"
 # Gemini engine instead of Edge:
-node scripts/generate_chapter_voiceover.js --script chapter1_raw.json --title "Book Title - Chapter 1" --prefix "book_chapter_1" --pdf "path/to/book.pdf" --engine gemini --voice Sadaltager --style "clear, knowledgeable tech expert explaining to a colleague"
+node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --script chapter1_raw.json --title "Book Title - Chapter 1" --prefix "book_chapter_1" --pdf "path/to/book.pdf" --engine gemini --voice Sadaltager --style "clear, knowledgeable tech expert explaining to a colleague"
 ```
 `--script` is looked up relative to the current directory first, then the PDF's folder. Outputs land in the PDF's folder unless `--outDir` is given.
 * **Page-by-page caching**: Saves intermediate MP3s in `<output dir>/audio_<prefix>_cache/page_<N>.mp3` so interrupted jobs resume instantly without re-synthesizing completed pages.
@@ -157,7 +157,7 @@ The generator automatically outputs (into the PDF's folder):
 ### Step 5: Generate Zero-CORS Preloader & Interactive Player
 1. The generator automatically creates the base64 preloader (`<slug>_pdf_data.js`, next to the player) and links it from the player, so the HTML can be double-clicked directly from the local filesystem (`file:///`) without CORS origin errors. It is only rebuilt when the PDF changes. To create one manually:
 ```bash
-node scripts/make_pdf_preloader.js --pdf "path/to/book.pdf"
+node .agents/skills/book-voiceover/scripts/make_pdf_preloader.js --pdf "path/to/book.pdf"
 ```
 2. The HTML player (`<prefix>_player.html`) is automatically generated with:
 - **Dual-Pane Open Book Spread**: Two pages displayed side-by-side on desktop landscape, single-pane on mobile portrait.
@@ -183,18 +183,18 @@ DRM-free EPUBs (for example from Project Gutenberg, or books sold DRM-free) are 
 
 1. **List the chapters** (numbers come from the table of contents; nested entries are indented):
    ```bash
-   node scripts/epub_reader.js --epub "path/to/book.epub" --toc
+   node .agents/skills/book-voiceover/scripts/epub_reader.js --epub "path/to/book.epub" --toc
    ```
 2. **Extract the chapter** as a draft narration script (and a readable Markdown copy for review):
    ```bash
-   node scripts/epub_reader.js --epub "path/to/book.epub" --chapter 4 --out chapter4_raw.json
-   node scripts/epub_reader.js --epub "path/to/book.epub" --chapter 4 --out chapter4_raw.md
+   node .agents/skills/book-voiceover/scripts/epub_reader.js --epub "path/to/book.epub" --chapter 4 --out chapter4_raw.json
+   node .agents/skills/book-voiceover/scripts/epub_reader.js --epub "path/to/book.epub" --chapter 4 --out chapter4_raw.md
    ```
    The JSON is `{ "1": "...", "2": "..." }`: parts of roughly a page (they only group paragraphs for synthesis), with paragraphs separated by blank lines. Code blocks appear as `CODE:` followed by the code, images as `IMAGE: <alt text>`, and tables as `TABLE: ...`. Decorative lines such as "* * *" are already dropped.
 3. **Prepare the script** exactly as in Step 2 for PDFs: keep prose verbatim, and replace each `CODE:`, `IMAGE:` and `TABLE:` paragraph with a spoken `Code example:`, `Diagram description:` or `Table summary:` paragraph (the EPUB's image alt text is often a good starting point). Keep one paragraph per book paragraph; do not merge or split paragraphs, since each is matched back to the book's text for the highlight. Keep exactly one description per code block, image or table, in the book's order and starting with those exact prefixes: descriptions cannot be matched by their words, so each is paired with the next unclaimed block of its kind (code, image or table) between the matched paragraphs around it. Dropping a block (for example a decorative image) is fine.
 4. **Generate** with the same engine, voice and style options as PDFs:
    ```bash
-   node scripts/generate_chapter_voiceover.js --epub "path/to/book.epub" --chapter 4 --script chapter4.json --prefix "book_chapter_4" --engine <engine> --voice <voice>
+   node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --epub "path/to/book.epub" --chapter 4 --script chapter4.json --prefix "book_chapter_4" --engine <engine> --voice <voice>
    ```
    The title defaults to "<book title> - <chapter title>" from the EPUB; pass `--title` to override it. Without `--script`, the chapter's text is narrated as extracted, skipping code, images and tables.
 5. **Outputs** go next to the EPUB, with the same files as for PDFs (`<prefix>.mp3`, markers, `<prefix>_paragraphs.json` where each paragraph lists the book `blocks` it covers, transcript), plus `<prefix>_player.html`: a **reflowing reader** with the chapter's text and images built in (it opens by double-click; only the MP3 is loaded from beside it). It highlights the paragraph being read and scrolls to follow it (scrolling away pauses following until "Back to narration" is clicked), and clicking any paragraph jumps the audio there. Controls: play/pause, ±5s, previous/next paragraph, speed, font size, light/dark theme. Keys: `Space`, `←`/`→`, `[`/`]` (paragraph), `H` (highlight), `F` (follow), `T` (theme), `+`/`-` (text size).

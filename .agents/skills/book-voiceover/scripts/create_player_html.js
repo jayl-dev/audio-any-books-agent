@@ -2323,6 +2323,18 @@ ${scriptTag ? scriptTag + '\n' : ''}  <style>
       }
     });
 
+    // Lock screen / headphone / media key controls
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: ${JSON.stringify(title || '').replace(/</g, '\\u003c')}, album: PDF_FILENAME });
+      const ms = (action, fn) => { try { navigator.mediaSession.setActionHandler(action, fn); } catch (_) {} };
+      ms('play', () => audio.play());
+      ms('pause', () => audio.pause());
+      ms('seekbackward', () => document.getElementById('back-5-btn').click());
+      ms('seekforward', () => document.getElementById('fwd-5-btn').click());
+      ms('previoustrack', () => turnPage(-1));
+      ms('nexttrack', () => turnPage(1));
+    }
+
     let currentRenderedLeft = null;
     let currentRenderedRight = null;
     let currentRenderedZoom = null;

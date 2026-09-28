@@ -3,7 +3,7 @@
  * Part of the 'audio-any-books-agent' toolkit.
  *
  * Usage as CLI:
- *   node scripts/generate_chapter_voiceover.js --pdf <pdfPath> --pages <start>-<end> [--title <title>] [--prefix <prefix>] [--engine edge|gemini|openrouter|google-cloud] [--voice <voiceName>] [--model <geminiModel>] [--style <direction>] [--bookPageOffset <offset>] [--outDir <dir>]
+ *   node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --pdf <pdfPath> --pages <start>-<end> [--title <title>] [--prefix <prefix>] [--engine edge|gemini|openrouter|google-cloud] [--voice <voiceName>] [--model <geminiModel>] [--style <direction>] [--bookPageOffset <offset>] [--outDir <dir>]
  *
  * Usage as Module:
  *   const { processChapter } = require('./generate_chapter_voiceover');
@@ -22,6 +22,14 @@ const { preloaderInfo, createPreloader } = require('./make_pdf_preloader');
 const { locateParagraphs, locateInBlocks } = require('./paragraph_locator');
 const { openEpub, extractChapter, scriptFromBlocks } = require('./epub_reader');
 const { createEpubPlayerHtml } = require('./create_epub_player_html');
+
+// The project root (where .env and credentials/ live): the nearest folder above this script with a package.json
+const PROJECT_ROOT = (() => {
+  for (let dir = __dirname; ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    if (path.dirname(dir) === dir) return path.join(__dirname, '..');
+  }
+})();
 
 function formatTime(seconds) {
   const hrs = Math.floor(seconds / 3600);
@@ -178,7 +186,7 @@ async function getGoogleCloudToken() {
     if (!keyFile) {
       throw new Error('The google-cloud engine needs a service account key. Set GOOGLE_APPLICATION_CREDENTIALS to the key file path (in .env or the environment).');
     }
-    if (!path.isAbsolute(keyFile)) keyFile = path.join(__dirname, '..', keyFile);
+    if (!path.isAbsolute(keyFile)) keyFile = path.join(PROJECT_ROOT, keyFile);
     if (!fs.existsSync(keyFile)) throw new Error(`Service account key not found: ${keyFile}`);
     const { GoogleAuth } = require('google-auth-library');
     googleCloudAuth = new GoogleAuth({ keyFile, scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
@@ -343,7 +351,7 @@ async function encodeMp3(samples, sampleRate) {
 // Load API keys (GEMINI_API_KEY, OPENROUTER_API_KEY) from a .env file in the current directory or the repo root.
 // Variables already set in the environment take precedence.
 function loadEnvFile() {
-  for (const candidate of [path.resolve('.env'), path.join(__dirname, '..', '.env')]) {
+  for (const candidate of [path.resolve('.env'), path.join(PROJECT_ROOT, '.env')]) {
     if (fs.existsSync(candidate)) {
       process.loadEnvFile(candidate);
       return;
@@ -978,7 +986,7 @@ if (require.main === module) {
     }
     let pagesData = {};
     if (epubArg && !chapterArg) {
-      console.error('EPUB input needs --chapter <N>; list the chapters with: node scripts/epub_reader.js --epub "book.epub" --toc');
+      console.error('EPUB input needs --chapter <N>; list the chapters with: node .agents/skills/book-voiceover/scripts/epub_reader.js --epub "book.epub" --toc');
       process.exit(1);
     }
 
@@ -1016,10 +1024,10 @@ if (require.main === module) {
     } else {
       console.log(`
 Usage:
-  node scripts/generate_chapter_voiceover.js --script pages.json --title "Chapter Title" --prefix ch1
-  node scripts/generate_chapter_voiceover.js --pdf "book.pdf" --pages 10-25 --title "Chapter Title" --prefix ch1
-  node scripts/generate_chapter_voiceover.js --epub "book.epub" --chapter 4 --script ch4.json --prefix ch4
-    (chapter numbers come from: node scripts/epub_reader.js --epub "book.epub" --toc)
+  node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --script pages.json --title "Chapter Title" --prefix ch1
+  node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --pdf "book.pdf" --pages 10-25 --title "Chapter Title" --prefix ch1
+  node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --epub "book.epub" --chapter 4 --script ch4.json --prefix ch4
+    (chapter numbers come from: node .agents/skills/book-voiceover/scripts/epub_reader.js --epub "book.epub" --toc)
 
 Options:
   --engine <name>        TTS engine (default: edge, free Microsoft voices):
