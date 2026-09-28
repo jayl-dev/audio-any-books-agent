@@ -134,7 +134,7 @@ For each page:
 - Clean bullet symbols (``, `•`, `■`) so speech engines pronounce sentences cleanly.
 
 ### Step 3: Run the Resilient TTS Synthesizer
-Run the synthesizer using `.agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js` or a curated generator script:
+Run the synthesizer, `.agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js`, with the prepared script:
 ```bash
 node .agents/skills/book-voiceover/scripts/generate_chapter_voiceover.js --script chapter1_raw.json --title "Book Title - Chapter 1" --prefix "book_chapter_1" --pdf "path/to/book.pdf" --voice "<voice chosen in Step 0.5>"
 # Gemini engine instead of Edge:
